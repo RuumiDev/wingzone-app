@@ -1,0 +1,14 @@
+.root {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  
+  .card {
+    border: none;
+    border-radius: 12px;
+  }
+  
+  button[type="submit"] {
+    border-radius: 8px;
+    font-weight: 600;
+  }
+}

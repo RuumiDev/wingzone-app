@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "24304517780",
+    "project_id": "wingzone-app",
+    "storage_bucket": "wingzone-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:24304517780:android:43c7ce61f427255f62aa81",
+        "android_client_info": {
+          "package_name": "wingzone.zenith"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBhJf12zZDS9_5-arJQzxkCF7Mzg5yj7qs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

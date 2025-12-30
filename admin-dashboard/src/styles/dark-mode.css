@@ -1,0 +1,180 @@
+/* Dark Mode Styles */
+[data-theme="dark"] {
+  --bg-primary: #0f1117;
+  --bg-secondary: #1a1d29;
+  --bg-tertiary: #252836;
+  --text-primary: #f8f9fa;
+  --text-secondary: #b8bcc8;
+  --text-tertiary: #8b92a8;
+  --border-color: #3a3d4e;
+  --card-bg: #1a1d29;
+}
+
+[data-theme="dark"] body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .card {
+  background-color: var(--card-bg);
+  border-color: var(--border-color);
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .card-body {
+  background-color: var(--card-bg);
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] h1,
+[data-theme="dark"] h2,
+[data-theme="dark"] h3,
+[data-theme="dark"] h4,
+[data-theme="dark"] h5,
+[data-theme="dark"] h6 {
+  color: #ffffff !important;
+  font-weight: 600;
+}
+
+[data-theme="dark"] p,
+[data-theme="dark"] span,
+[data-theme="dark"] div,
+[data-theme="dark"] td,
+[data-theme="dark"] th,
+[data-theme="dark"] label {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .text-muted,
+[data-theme="dark"] .small {
+  color: var(--text-secondary) !important;
+  opacity: 0.9;
+}
+
+[data-theme="dark"] .form-control,
+[data-theme="dark"] .form-select {
+  background-color: var(--bg-tertiary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .form-control:focus,
+[data-theme="dark"] .form-select:focus {
+  background-color: var(--bg-tertiary);
+  border-color: #007bff;
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .table {
+  color: var(--text-primary) !important;
+  border-color: var(--border-color);
+}
+
+[data-theme="dark"] .table thead {
+  background-color: var(--bg-tertiary);
+}
+
+[data-theme="dark"] .table thead th {
+  color: #ffffff !important;
+  font-weight: 600;
+  border-color: var(--border-color);
+}
+
+[data-theme="dark"] .table tbody tr {
+  background-color: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+[data-theme="dark"] .table tbody td {
+  color: var(--text-primary) !important;
+  border-color: var(--border-color);
+}
+
+[data-theme="dark"] .table tbody tr:hover {
+  background-color: var(--bg-tertiary);
+}
+
+[data-theme="dark"] .table tbody tr:hover td {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] header {
+  background-color: var(--card-bg) !important;
+  border-bottom-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] header * {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] main {
+  background-color: var(--bg-primary) !important;
+}
+
+[data-theme="dark"] .modal-content {
+  background-color: var(--card-bg);
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .modal-header,
+[data-theme="dark"] .modal-footer {
+  border-color: var(--border-color);
+}
+
+[data-theme="dark"] .modal-title {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .dropdown-menu {
+  background-color: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+[data-theme="dark"] .dropdown-item {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .dropdown-item:hover {
+  background-color: var(--bg-tertiary);
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .badge {
+  background-color: var(--bg-tertiary);
+  color: #ffffff !important;
+  font-weight: 600;
+}
+
+[data-theme="dark"] .alert {
+  background-color: var(--bg-tertiary);
+  border-color: var(--border-color);
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .btn-light {
+  background-color: var(--bg-tertiary);
+  border-color: var(--border-color);
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .btn-light:hover {
+  background-color: var(--bg-primary);
+  color: #ffffff !important;
+}
+
+/* Sidebar specific styles */
+[data-theme="dark"] nav a,
+[data-theme="dark"] nav button,
+[data-theme="dark"] nav span {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] nav a:hover,
+[data-theme="dark"] nav button:hover {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] nav a.active {
+  color: #ffffff !important;
+  font-weight: 600;
+}

@@ -1,0 +1,29 @@
+.root {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  background-color: #f4f5f7;
+  
+  &.sidebarOpen {
+    margin-left: 0;
+  }
+}
+
+.content {
+  flex: 1;
+  padding: 30px;
+  overflow-y: auto;
+}
+
+@media (max-width: 768px) {
+  .content {
+    padding: 15px;
+  }
+}

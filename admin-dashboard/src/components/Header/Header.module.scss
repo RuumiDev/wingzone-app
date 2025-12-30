@@ -1,0 +1,87 @@
+.root {
+  height: 70px;
+  background: white;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 30px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.leftSection {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.sidebarToggle {
+  font-size: 28px;
+  color: #333;
+  padding: 0;
+  
+  &:hover {
+    color: #ff6b35;
+  }
+  
+  @media (min-width: 769px) {
+    display: none;
+  }
+}
+
+.title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.rightSection {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.iconButton {
+  position: relative;
+  font-size: 20px;
+  color: #666;
+  padding: 8px 12px;
+  
+  &:hover {
+    color: #ff6b35;
+  }
+}
+
+.badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: #ff6b35;
+  color: white;
+  border-radius: 10px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.logoutButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #666;
+  font-size: 14px;
+  padding: 8px 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  
+  i {
+    font-size: 18px;
+  }
+  
+  &:hover {
+    background: #f8f9fa;
+    color: #ff6b35;
+    border-color: #ff6b35;
+  }
+}

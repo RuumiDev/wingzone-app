@@ -1,0 +1,96 @@
+.root {
+  width: 240px;
+  background: linear-gradient(180deg, #2c3e50 0%, #34495e 100%);
+  color: white;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.logo {
+  padding: 25px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  
+  img {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+  }
+}
+
+.logoText {
+  font-size: 20px;
+  font-weight: 700;
+  color: white;
+}
+
+.nav {
+  flex: 1;
+  list-style: none;
+  padding: 20px 0;
+  margin: 0;
+  overflow-y: auto;
+  
+  li {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 15px 25px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 15px;
+    
+    i {
+      font-size: 20px;
+    }
+    
+    &:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+    }
+    
+    &.active {
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+      border-left: 4px solid #ff6b35;
+      padding-left: 21px;
+    }
+  }
+}
+
+.footer {
+  padding: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  
+  i {
+    font-size: 36px;
+    color: rgba(255, 255, 255, 0.9);
+  }
+}
+
+.userInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.userName {
+  font-size: 14px;
+  font-weight: 600;
+  color: white;
+}
+
+.userEmail {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+}

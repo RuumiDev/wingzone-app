@@ -1,0 +1,32 @@
+.widget {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  margin-bottom: 25px;
+  overflow: visible; // Changed from hidden to visible to prevent dropdown clipping
+}
+
+.widgetHeader {
+  padding: 20px 25px;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.widgetTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.widgetActions {
+  display: flex;
+  gap: 10px;
+}
+
+.widgetBody {
+  padding: 25px;
+  overflow: visible; // Ensure dropdowns aren't clipped
+}

@@ -1,0 +1,22 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Menu item images - admins can upload, anyone can read
+    match /menu/{imageId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // Receipts - authenticated users only
+    match /receipts/{receiptId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // User uploads
+    match /user-uploads/{userId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

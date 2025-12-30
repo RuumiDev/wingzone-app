@@ -1,0 +1,126 @@
+.toast {
+  position: fixed;
+  top: 80px;
+  right: 24px;
+  width: 380px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  z-index: 9999;
+  opacity: 0;
+  transform: translateX(400px);
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+  &.show {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  &.order {
+    border-left: 4px solid #007bff;
+  }
+
+  &.success {
+    border-left: 4px solid #28a745;
+  }
+
+  &.error {
+    border-left: 4px solid #dc3545;
+  }
+
+  &.info {
+    border-left: 4px solid #17a2b8;
+  }
+}
+
+.toastContent {
+  display: flex;
+  align-items: start;
+  gap: 12px;
+  padding: 16px 20px;
+}
+
+.icon {
+  font-size: 28px;
+  flex-shrink: 0;
+  animation: bounce 0.6s ease-out;
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #212529;
+  margin-bottom: 4px;
+}
+
+.message {
+  font-size: 0.85rem;
+  color: #6c757d;
+  line-height: 1.4;
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  color: #adb5bd;
+  cursor: pointer;
+  padding: 4px;
+  transition: all 0.2s;
+  flex-shrink: 0;
+
+  &:hover {
+    color: #495057;
+    transform: scale(1.2);
+  }
+
+  i {
+    font-size: 0.75rem;
+  }
+}
+
+.progressBar {
+  height: 4px;
+  background: #e9ecef;
+  overflow: hidden;
+}
+
+.progress {
+  height: 100%;
+  background: linear-gradient(90deg, #007bff, #0056b3);
+  animation: progressShrink linear forwards;
+  transform-origin: left;
+}
+
+@keyframes progressShrink {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+// Mobile responsive
+@media (max-width: 768px) {
+  .toast {
+    width: calc(100vw - 32px);
+    left: 16px;
+    right: 16px;
+    top: 70px;
+  }
+}
