@@ -14,16 +14,27 @@
   }
 }
 
+/* Updated 2026-01-03 - Centered layout */
 .receipt-container {
   background: white;
-  max-width: 400px;
+  width: 100%;
+  max-width: none;
   margin: 0 auto;
-  padding: 20px;
+  padding: 30px;
   font-family: 'Courier New', monospace;
   color: #000;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.6;
+  box-sizing: border-box;
 }
 
 /* Print Styles */
+@page {
+  size: 80mm 297mm;
+  margin: 0;
+}
+
 @media print {
   body * {
     visibility: hidden;
@@ -38,8 +49,11 @@
     position: absolute;
     left: 0;
     top: 0;
-    width: 80mm; /* Thermal printer width */
+    width: 80mm;
+    max-width: 80mm;
     padding: 10px;
+    transform: none !important;
+    zoom: 1 !important;
   }
   
   .print-hide {
@@ -56,45 +70,49 @@
   margin-bottom: 10px;
   
   .order-type-banner {
-    font-size: 14px;
-    font-weight: bold;
-    margin: 3px 0;
+    font-size: 20px;
+    font-weight: 900;
+    margin: 10px 0;
     font-family: 'Courier New', monospace;
+    letter-spacing: 5px;
+    text-align: center;
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
   }
   
   .table-info,
   .lobby-info,
   .host-info,
   .customer-info {
-    font-size: 13px;
-    margin: 2px 0;
+    font-size: 16px;
+    font-weight: 700;
+    margin: 4px 0;
     font-family: 'Courier New', monospace;
+    text-align: center;
   }
   
   .divider-line {
     font-family: 'Courier New', monospace;
     font-size: 10px;
-    margin: 5px 0;
+    margin: 8px 0;
     color: #000;
+    opacity: 0.4;
+    border-width: 1px;
   }
   
   .restaurant-name {
-    font-size: 14px;
-    font-weight: bold;
-    margin: 8px 0 3px 0;
-    color: #000;
+    font-size: 18px;
+    font-weight: 900;
+    margin: 8px 0;
+    text-align: center;
   }
   
-  .reg-number {
-    font-size: 11px;
-    margin: 1px 0;
-    color: #000;
-  }
-  
+  .reg-number,
   .restaurant-address {
-    font-size: 11px;
-    margin: 1px 0;
-    color: #000;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.5;
+    text-align: center;
   }
 }
 
@@ -104,203 +122,265 @@
   .status-row {
     display: flex;
     justify-content: space-between;
-    font-size: 11px;
+    font-size: 14px;
+    font-weight: 700;
     font-family: 'Courier New', monospace;
-    margin: 2px 0;
+    margin: 6px 0;
+    
+    span {
+      &:first-child {
+        text-align: left;
+      }
+      &:last-child {
+        text-align: right;
+      }
+    }
   }
 }
 
 .items-section {
   .section-title {
     text-align: center;
-    font-size: 12px;
-    font-weight: bold;
-    margin: 8px 0 2px 0;
+    font-size: 14px;
+    font-weight: 900;
+    margin: 10px 0 6px 0;
+    letter-spacing: 3px;
   }
   
   .section-subtitle {
     text-align: center;
-    font-size: 10px;
+    font-size: 12px;
     font-style: italic;
     color: #666;
-    margin: 0 0 5px 0;
+    margin: 0 0 8px 0;
   }
   
   .items-header {
     display: flex;
-    font-weight: bold;
-    font-size: 11px;
-    margin: 5px 0;
+    font-weight: 900;
+    font-size: 16px;
+    margin: 10px 0 6px 0;
+    padding-bottom: 4px;
+    border-bottom: 2px solid #000;
     
     .qty-col {
-      width: 40px;
+      width: 50px;
+      text-align: left;
     }
     
     .item-col {
       flex: 1;
+      padding: 0 15px;
+      text-align: left;
     }
     
     .price-col {
-      width: 60px;
+      width: 100px;
       text-align: right;
     }
   }
 }
 
 .receipt-divider {
-  border-top: 2px dashed #ccc;
-  margin: 15px 0;
+  display: none;
 }
 
 .divider-line-thin {
-  font-family: 'Courier New', monospace;
-  font-size: 10px;
-  margin: 8px 0;
-  color: #000;
-  text-align: center;
+  display: none;
+}
+
+.divider-line {
+  display: none;
 }
 
 .receipt-section {
-  margin: 15px 0;
+  margin: 20px 0;
   
   .section-title {
-    font-size: 14px;
-    font-weight: bold;
-    margin-bottom: 10px;
+    font-size: 26px;
+    font-weight: 900;
+    margin-bottom: 15px;
     text-transform: uppercase;
-    border-bottom: 1px solid #ddd;
-    padding-bottom: 5px;
+    border-bottom: 2px solid #ddd;
+    padding-bottom: 8px;
   }
 }
 
 .totals-section {
+  margin-top: 15px;
+  padding-top: 10px;
+  border-top: 1px solid #000;
+  
   .total-row {
     display: flex;
     justify-content: space-between;
-    font-size: 12px;
-    margin: 3px 0;
+    font-size: 15px;
+    font-weight: 900;
+    margin: 6px 0;
     font-family: 'Courier New', monospace;
     
     .label {
-      font-weight: 600;
+      font-weight: 900;
     }
     
     .value {
-      font-weight: 600;
+      font-weight: 900;
     }
     
     &.grand-total {
-      font-size: 13px;
-      font-weight: bold;
-      margin: 5px 0;
+      font-size: 18px;
+      font-weight: 900;
+      margin: 10px 0;
+      padding-top: 8px;
+      border-top: 2px solid #000;
     }
   }
 }
 
 .total-summary {
-  font-size: 11px;
+  font-size: 15px;
+  font-weight: 700;
   font-family: 'Courier New', monospace;
+  margin: 6px 0;
   
   div {
-    margin: 2px 0;
+    margin: 6px 0;
   }
 }
 
 .receipt-item {
-  margin: 8px 0;
+  margin: 10px 0;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed #ddd;
+  
+  &:last-child {
+    border-bottom: none;
+  }
   
   .item-row {
     display: flex;
-    font-size: 11px;
-    margin-bottom: 2px;
+    font-size: 16px;
+    font-weight: 900;
+    margin-bottom: 8px;
+    align-items: flex-start;
     
     .qty {
-      width: 40px;
-      font-weight: 600;
+      width: 50px;
+      font-weight: 900;
+      text-align: left;
+      font-size: 16px;
     }
     
     .name {
       flex: 1;
-      font-weight: 600;
+      font-weight: 900;
+      padding: 0 15px;
+      text-align: left;
+      word-wrap: break-word;
+      font-size: 16px;
     }
     
     .price {
-      width: 60px;
+      width: 100px;
       text-align: right;
-      font-weight: 600;
+      font-weight: 900;
+      font-size: 16px;
     }
   }
   
   .modifiers {
-    margin-left: 50px;
-    font-size: 10px;
+    margin-left: 65px;
+    font-size: 13px;
+    font-weight: 700;
     color: #333;
+    line-height: 1.6;
     
     div {
-      margin: 1px 0;
+      margin: 3px 0;
     }
     
     .highlight-dip {
       background-color: #FFF3CD;
-      padding: 2px 4px;
-      margin: 3px 0;
+      padding: 4px 8px;
+      margin: 4px 0;
       border: 1px solid #856404;
-      font-weight: bold;
+      font-weight: 900;
+      font-size: 13px;
       color: #856404;
     }
     
     .highlight-drink {
       background-color: #D1ECF1;
-      padding: 2px 4px;
-      margin: 3px 0;
+      padding: 4px 8px;
+      margin: 4px 0;
       border: 1px solid #0C5460;
-      font-weight: bold;
+      font-weight: 900;
+      font-size: 13px;
       color: #0C5460;
     }
   }
 }
 
 .kitchen-summary {
-  margin: 10px 0;
-  padding: 10px;
+  margin: 20px 0;
+  padding: 15px;
   background: #F8F9FA;
-  border: 2px solid #000;
+  border: 3px solid #000;
+  
+  h3 {
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    margin: 8px 0;
+    text-align: center;
+  }
+  
+  .summary-category {
+    font-size: 15px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    margin: 12px 0 6px 0;
+    text-decoration: underline;
+  }
   
   .summary-line {
-    font-size: 13px;
-    font-weight: bold;
-    margin: 3px 0;
+    font-size: 14px;
+    font-weight: 700;
+    margin: 4px 0;
     font-family: 'Courier New', monospace;
     color: #000;
+    line-height: 1.5;
   }
 }
 
 .packing-note {
-  font-size: 11px;
+  font-size: 20px;
+  font-weight: 800;
   font-style: italic;
   color: #666;
-  margin: 5px 0 10px 0;
+  margin: 10px 0 15px 0;
   text-align: center;
 }
 
 .packing-box {
-  margin: 10px 0;
-  padding: 8px;
+  margin: 20px 0;
+  padding: 15px;
   background: #f9f9f9;
-  border-left: 3px solid #DC2626;
+  border-left: 4px solid #DC2626;
   
   .box-header {
-    font-size: 12px;
-    font-weight: bold;
-    margin-bottom: 5px;
+    font-size: 22px;
+    font-weight: 900;
+    margin-bottom: 10px;
     color: #000;
     font-family: 'Courier New', monospace;
   }
   
   .box-item {
-    font-size: 11px;
-    margin: 3px 0;
-    margin-left: 10px;
+    font-size: 20px;
+    font-weight: 800;
+    margin: 8px 0;
+    margin-left: 20px;
     color: #333;
   }
 }
@@ -309,17 +389,22 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   margin: 20px 0;
+  text-align: center;
   
   svg {
     border: 2px solid #ddd;
-    border-radius: 8px;
-    padding: 10px;
+    border-radius: 4px;
+    padding: 8px;
     background: white;
+    margin: 10px auto;
+    display: block;
   }
   
   .qr-label {
-    font-size: 11px;
+    font-size: 12px;
+    font-weight: 700;
     color: #666;
     margin-top: 8px;
     text-align: center;
@@ -328,40 +413,47 @@
 
 .receipt-footer {
   text-align: center;
-  margin-top: 15px;
+  margin-top: 20px;
+  border-top: 1px solid #000;
+  padding-top: 15px;
   
   .auth-section {
     margin: 15px 0;
     
     .auth-code {
-      font-size: 13px;
-      font-weight: bold;
-      margin: 8px 0;
+      font-size: 16px;
+      font-weight: 900;
+      margin: 10px 0;
       font-family: 'Courier New', monospace;
+      letter-spacing: 4px;
     }
   }
   
   .wifi-info,
   .social-info {
-    font-size: 11px;
-    margin: 3px 0;
+    font-size: 13px;
+    font-weight: 700;
+    margin: 5px 0;
     color: #333;
+    line-height: 1.5;
   }
 }
 
 .paid-stamp {
-  font-size: 16px;
-  font-weight: bold;
+  font-size: 18px;
+  font-weight: 900;
   text-align: center;
-  margin: 10px 0;
+  margin: 15px 0;
   color: #10B981;
-  letter-spacing: 3px;
+  letter-spacing: 6px;
+  text-align: center;
 }
 
 .payment-info {
-  font-size: 12px;
+  font-size: 14px;
+  font-weight: 700;
   text-align: center;
-  margin: 10px 0;
+  margin: 8px 0;
   color: #666;
 }
 

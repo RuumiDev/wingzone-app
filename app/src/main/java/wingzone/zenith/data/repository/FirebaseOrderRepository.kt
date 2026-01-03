@@ -140,7 +140,18 @@ class FirebaseOrderRepository {
                             "name" to item.menuItem.name,
                             "description" to item.menuItem.description,
                             "price" to item.menuItem.price,
-                            "category" to item.menuItem.category
+                            "category" to item.menuItem.category,
+                            "kitchenIngredients" to item.menuItem.kitchenIngredients?.let { kitchen ->
+                                hashMapOf(
+                                    "ingredients" to kitchen.ingredients.map { ingredient ->
+                                        hashMapOf(
+                                            "type" to ingredient.type,
+                                            "quantity" to ingredient.quantity,
+                                            "requiresSelection" to ingredient.requiresSelection
+                                        )
+                                    }
+                                )
+                            }
                         ),
                         "quantity" to item.quantity,
                         "customization" to item.customization,

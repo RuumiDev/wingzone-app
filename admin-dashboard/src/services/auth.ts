@@ -15,18 +15,25 @@ class AuthService {
   // Firebase authentication
   async login(email: string, password: string): Promise<AuthUser> {
     try {
+      console.log('Attempting login with:', email);
+      
       // Sign in with Firebase
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const firebaseUser = userCredential.user;
       
+      console.log('Firebase auth successful, UID:', firebaseUser.uid);
+      
       // Get user data from Firestore
       const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+      
+      console.log('Firestore doc exists:', userDoc.exists());
       
       if (!userDoc.exists()) {
         throw new Error('User data not found');
       }
       
       const userData = userDoc.data();
+      console.log('User role:', userData.role);
       
       // Check if user is admin
       if (userData.role !== 'admin' && userData.role !== 'kitchen') {
@@ -42,10 +49,13 @@ class AuthService {
       };
       
       localStorage.setItem('user', JSON.stringify(this.currentUser));
+      console.log('Login successful!');
       return this.currentUser;
       
     } catch (error: any) {
-      console.error('Login error:', error);
+      console.error('Login error details:', error);
+      console.error('Error code:', error.code);
+      console.error('Error message:', error.message);
       throw new Error(error.message || 'Invalid credentials');
     }
   }

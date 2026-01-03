@@ -10,7 +10,8 @@ data class AvailabilitySettings(
     val flavors: List<String> = emptyList(),
     val beverages: List<String> = emptyList(),
     val sides: List<String> = emptyList(),
-    val dippingSauces: List<String> = emptyList()
+    val dippingSauces: List<String> = emptyList(),
+    val boneTypes: List<String> = emptyList()
 )
 
 class AvailabilityRepository {
@@ -40,12 +41,14 @@ class AvailabilityRepository {
                         val beverages = (snapshot.get("beverages") as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
                         val sides = (snapshot.get("sides") as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
                         val dippingSauces = (snapshot.get("dippingSauces") as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+                        val boneTypes = (snapshot.get("boneTypes") as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
                         
                         _availability.value = AvailabilitySettings(
                             flavors = flavors,
                             beverages = beverages,
                             sides = sides,
-                            dippingSauces = dippingSauces
+                            dippingSauces = dippingSauces,
+                            boneTypes = boneTypes
                         )
                         
                         android.util.Log.d("AvailabilityRepository", "Updated availability: ${_availability.value}")
@@ -72,6 +75,10 @@ class AvailabilityRepository {
     
     fun isDippingSauceAvailable(sauce: String): Boolean {
         return _availability.value.dippingSauces.contains(sauce)
+    }
+    
+    fun isBoneTypeAvailable(boneType: String): Boolean {
+        return _availability.value.boneTypes.contains(boneType)
     }
     
     fun cleanup() {

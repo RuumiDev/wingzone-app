@@ -9,11 +9,32 @@ import kotlinx.coroutines.tasks.await
 import wingzone.zenith.data.models.MenuItem
 import wingzone.zenith.data.models.CustomizationOptions
 import wingzone.zenith.data.models.FriesExchangeOption
+import wingzone.zenith.data.models.KitchenIngredients
+import wingzone.zenith.data.models.KitchenIngredient
 
 class FirebaseMenuRepository {
     private val firestore = FirebaseFirestore.getInstance()
     private val menuCollection = firestore.collection("menuItems")
     private var menuListener: ListenerRegistration? = null
+    
+    private fun parseKitchenIngredients(data: Any?): KitchenIngredients? {
+        if (data !is Map<*, *>) return null
+        
+        return try {
+            val ingredientsList = (data["ingredients"] as? List<*>)?.mapNotNull { item ->
+                val ingredientMap = item as? Map<*, *> ?: return@mapNotNull null
+                KitchenIngredient(
+                    type = ingredientMap["type"] as? String ?: return@mapNotNull null,
+                    quantity = (ingredientMap["quantity"] as? Number)?.toInt() ?: return@mapNotNull null,
+                    requiresSelection = ingredientMap["requiresSelection"] as? Boolean ?: false
+                )
+            } ?: emptyList()
+            
+            KitchenIngredients(ingredients = ingredientsList)
+        } catch (e: Exception) {
+            null
+        }
+    }
     
     private fun parseCustomizationOptions(data: Any?, flavors: Any?): CustomizationOptions? {
         if (data !is Map<*, *>) return null
@@ -35,15 +56,18 @@ class FirebaseMenuRepository {
             // Parse beverages and dipping sauces from customizationOptions
             val availableBeverages = (data["beverages"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
             val availableDippingSauces = (data["dippingSauces"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+            val availableBoneTypes = (data["availableBoneTypes"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
             
             return CustomizationOptions(
                 requiresFlavor = data["requiresFlavor"] as? Boolean ?: false,
                 requiresBeverage = data["requiresBeverage"] as? Boolean ?: false,
                 requiresDippingSauce = data["requiresDippingSauce"] as? Boolean ?: false,
+                requiresBoneType = data["requiresBoneType"] as? Boolean ?: false,
                 allowFriesExchange = data["allowFriesExchange"] as? Boolean ?: false,
                 availableFlavors = availableFlavors,
                 availableBeverages = availableBeverages,
                 availableDippingSauces = availableDippingSauces,
+                availableBoneTypes = availableBoneTypes,
                 friesExchanges = friesExchanges
             )
         } catch (e: Exception) {
@@ -70,6 +94,8 @@ class FirebaseMenuRepository {
                         price = doc.getDouble("price") ?: 0.0,
                         category = doc.getString("category") ?: "",
                         imageUrl = doc.getString("imageUrl"),
+                        displayOrder = doc.getLong("displayOrder")?.toInt(),
+                        kitchenIngredients = parseKitchenIngredients(doc.get("kitchenIngredients")),
                         requiresCustomization = doc.getBoolean("requiresCustomization") ?: false,
                         customizationOptions = parseCustomizationOptions(doc.get("customizationOptions"), doc.get("flavors"))
                     )
@@ -103,6 +129,8 @@ class FirebaseMenuRepository {
                             price = doc.getDouble("price") ?: 0.0,
                             category = doc.getString("category") ?: "",
                             imageUrl = doc.getString("imageUrl"),
+                            displayOrder = doc.getLong("displayOrder")?.toInt(),
+                            kitchenIngredients = parseKitchenIngredients(doc.get("kitchenIngredients")),
                             requiresCustomization = doc.getBoolean("requiresCustomization") ?: false,
                             customizationOptions = parseCustomizationOptions(doc.get("customizationOptions"), doc.get("flavors"))
                         )
@@ -137,6 +165,8 @@ class FirebaseMenuRepository {
                         price = doc.getDouble("price") ?: 0.0,
                         category = doc.getString("category") ?: "",
                         imageUrl = doc.getString("imageUrl"),
+                        displayOrder = doc.getLong("displayOrder")?.toInt(),
+                        kitchenIngredients = parseKitchenIngredients(doc.get("kitchenIngredients")),
                         requiresCustomization = doc.getBoolean("requiresCustomization") ?: false,
                         customizationOptions = parseCustomizationOptions(doc.get("customizationOptions"), doc.get("flavors"))
                     )

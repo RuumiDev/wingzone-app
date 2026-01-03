@@ -12,6 +12,20 @@ export interface NotificationData {
   customerName?: string;
 }
 
+export interface CustomSound {
+  id: string;
+  name: string;
+  url: string;
+  uploadedAt: string;
+}
+
+export interface NotificationSoundSettings {
+  enabled: boolean;
+  soundType: string; // 'default', 'urgent-alert', or custom sound ID
+  customSounds: CustomSound[]; // Array of custom sounds
+  volume: number; // 0-100
+}
+
 class NotificationService {
   private notificationsRef = collection(db, 'notifications');
   private orderListener: Unsubscribe | null = null;
@@ -19,33 +33,65 @@ class NotificationService {
   private audioContext: AudioContext | null = null;
   private hasPlayedSound = false;
   private toastCallback: ((title: string, message: string, type: 'order') => void) | null = null;
-  private soundEnabled: boolean = true;
+  private soundSettings: NotificationSoundSettings = {
+    enabled: true,
+    soundType: 'default',
+    customSounds: [],
+    volume: 70
+  };
+  private audioElement: HTMLAudioElement | null = null;
 
   constructor() {
-    // Initialize audio context for notification sounds
+    // Initialize audio context for fallback notification sounds
     if (typeof window !== 'undefined') {
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      this.audioElement = new Audio();
     }
     this.loadSoundPreference();
   }
 
   // Load sound preference from Firebase
-  private async loadSoundPreference() {
+  async loadSoundPreference() {
     try {
       const { doc, getDoc } = await import('firebase/firestore');
-      const docRef = doc(db, 'appSettings', 'adminPreferences');
+      const docRef = doc(db, 'appSettings', 'notificationSound');
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        this.soundEnabled = docSnap.data().notificationSound !== false;
+        this.soundSettings = {
+          enabled: docSnap.data().enabled !== false,
+          soundType: docSnap.data().soundType || 'default',
+          customSounds: docSnap.data().customSounds || [],
+          volume: docSnap.data().volume ?? 70
+        };
+        console.log('Loaded sound settings:', this.soundSettings);
       }
     } catch (error) {
       console.error('Error loading sound preference:', error);
     }
   }
 
-  // Update sound preference
+  // Update sound settings
+  async updateSoundSettings(settings: Partial<NotificationSoundSettings>) {
+    this.soundSettings = { ...this.soundSettings, ...settings };
+    
+    try {
+      const { doc, setDoc } = await import('firebase/firestore');
+      const docRef = doc(db, 'appSettings', 'notificationSound');
+      await setDoc(docRef, this.soundSettings, { merge: true });
+      console.log('Sound settings saved:', this.soundSettings);
+    } catch (error) {
+      console.error('Error saving sound settings:', error);
+    }
+  }
+
+  // Get current sound settings
+  getSoundSettings(): NotificationSoundSettings {
+    return { ...this.soundSettings };
+  }
+
+  // Update sound preference (legacy method)
   setSoundEnabled(enabled: boolean) {
-    this.soundEnabled = enabled;
+    this.updateSoundSettings({ enabled });
   }
 
   // Register toast callback
@@ -53,11 +99,59 @@ class NotificationService {
     this.toastCallback = callback;
   }
 
-  // Play notification sound
+  // Play notification sound with selected type
   private playNotificationSound() {
-    if (!this.audioContext || !this.soundEnabled) return;
+    if (!this.soundSettings.enabled) return;
+
+    const soundMap: Record<string, string> = {
+      'urgent-alert': '/sounds/Urgent Alert.mp3'
+    };
+
+    // Check if it's a preset sound
+    if (soundMap[this.soundSettings.soundType]) {
+      this.playAudioFile(soundMap[this.soundSettings.soundType]);
+    }
+    // Check if it's a custom sound
+    else if (this.soundSettings.soundType !== 'default') {
+      const customSound = this.soundSettings.customSounds.find(s => s.id === this.soundSettings.soundType);
+      if (customSound) {
+        this.playAudioFile(customSound.url);
+      } else {
+        this.playDefaultBeep();
+      }
+    } 
+    // Fallback to default beep
+    else {
+      this.playDefaultBeep();
+    }
+  }
+
+  // Play audio file
+  private playAudioFile(url: string) {
+    if (!this.audioElement) return;
 
     try {
+      this.audioElement.src = url;
+      this.audioElement.volume = this.soundSettings.volume / 100;
+      this.audioElement.play().catch(error => {
+        console.error('Error playing audio file:', error);
+        // Fallback to default beep if file fails
+        this.playDefaultBeep();
+      });
+      console.log('Playing audio file:', url);
+    } catch (error) {
+      console.error('Error setting up audio:', error);
+      this.playDefaultBeep();
+    }
+  }
+
+  // Play default beep sound (original implementation)
+  private playDefaultBeep() {
+    if (!this.audioContext) return;
+
+    try {
+      const volume = this.soundSettings.volume / 100;
+      
       // Create a simple beep sound
       const oscillator = this.audioContext.createOscillator();
       const gainNode = this.audioContext.createGain();
@@ -68,7 +162,7 @@ class NotificationService {
       oscillator.frequency.value = 800; // Frequency in Hz
       oscillator.type = 'sine';
 
-      gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime);
+      gainNode.gain.setValueAtTime(volume * 0.3, this.audioContext.currentTime);
       gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.5);
 
       oscillator.start(this.audioContext.currentTime);
@@ -84,16 +178,30 @@ class NotificationService {
       oscillator2.frequency.value = 1000;
       oscillator2.type = 'sine';
 
-      gainNode2.gain.setValueAtTime(0.3, this.audioContext.currentTime + 0.2);
+      gainNode2.gain.setValueAtTime(volume * 0.3, this.audioContext.currentTime + 0.2);
       gainNode2.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.7);
 
       oscillator2.start(this.audioContext.currentTime + 0.2);
       oscillator2.stop(this.audioContext.currentTime + 0.7);
 
-      console.log('Notification sound played');
+      console.log('Notification sound played (default beep)');
     } catch (error) {
       console.error('Error playing notification sound:', error);
     }
+  }
+
+  // Preview sound (public method for settings page)
+  previewSound(soundType: string, customUrl?: string) {
+    const originalSettings = { ...this.soundSettings };
+    this.soundSettings.soundType = soundType as any;
+    if (customUrl) this.soundSettings.customSoundUrl = customUrl;
+    
+    this.playNotificationSound();
+    
+    // Restore original settings after preview
+    setTimeout(() => {
+      this.soundSettings = originalSettings;
+    }, 100);
   }
 
   // Show browser notification
@@ -217,14 +325,48 @@ class NotificationService {
       // Check if auto-print is enabled in settings
       const settingsRef = doc(db, 'appSettings', 'adminPreferences');
       const settingsSnap = await getDoc(settingsRef);
-      const autoPrintEnabled = settingsSnap.exists() ? settingsSnap.data().autoPrintReceipts !== false : true;
+      const autoPrintEnabled = settingsSnap.exists() ? settingsSnap.data().autoPrintReceipts !== false : false;
+      const printerName = settingsSnap.exists() ? settingsSnap.data().printerName : '';
+      const useThermalPrinter = settingsSnap.exists() ? settingsSnap.data().useThermalPrinter !== false : true;
 
       if (!autoPrintEnabled) {
         console.log('Auto-print is disabled in settings');
         return;
       }
 
-      // Format order data for printing
+      console.log(`Auto-print enabled. Target printer: ${printerName || 'Default'}, Thermal: ${useThermalPrinter}`);
+
+      // Use QZ Tray thermal printer if enabled
+      if (useThermalPrinter) {
+        try {
+          const { default: thermalPrinter } = await import('./thermalPrinter');
+          
+          // Format order for thermal printing
+          const order = {
+            id: orderId,
+            ...orderData,
+            items: orderData.items || [],
+            total: orderData.total || 0,
+            createdAt: orderData.createdAt || Timestamp.now()
+          };
+
+          const success = await thermalPrinter.printReceipt(order, {
+            printerName: printerName || undefined,
+            paperWidth: 80
+          });
+
+          if (success) {
+            console.log(`Auto-printed receipt via QZ Tray for order ${orderId}`);
+            return;
+          } else {
+            console.log('QZ Tray print failed, falling back to browser print');
+          }
+        } catch (error) {
+          console.error('QZ Tray not available, falling back to browser print:', error);
+        }
+      }
+
+      // Fallback to browser print service
       const groupOrderForPrint: GroupOrderForPrint = {
         id: orderId,
         groupName: orderData.groupName || 'Group Order',
@@ -239,8 +381,7 @@ class NotificationService {
         total: orderData.total || 0
       };
 
-      // Print receipts for all participants
-      await printService.printGroupOrderReceipts(groupOrderForPrint);
+      await printService.printGroupOrderReceipts(groupOrderForPrint, undefined, printerName);
       
       console.log(`Auto-printed receipts for group order ${orderId}`);
     } catch (error) {

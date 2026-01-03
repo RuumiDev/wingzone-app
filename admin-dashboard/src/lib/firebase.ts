@@ -3,6 +3,7 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getFunctions } from 'firebase/functions';
+import { getAnalytics, isSupported } from 'firebase/analytics';
 
 // Firebase configuration from your Firebase project
 const firebaseConfig = {
@@ -23,5 +24,14 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const functions = getFunctions(app);
+
+// Initialize Analytics (only in browser environment)
+if (typeof window !== 'undefined') {
+  isSupported().then(supported => {
+    if (supported) {
+      getAnalytics(app);
+    }
+  });
+}
 
 export default app;

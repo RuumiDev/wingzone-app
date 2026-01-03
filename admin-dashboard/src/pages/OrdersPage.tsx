@@ -1,24 +1,94 @@
-import React, { useEffect, useState } from 'react';
-import { Row, Col, Button, Badge, Table, Alert, Nav, NavItem, NavLink } from 'reactstrap';
+import React, { useEffect, useState, useMemo } from 'react';
+import { Row, Col, Button, Badge, Table, Alert, Nav, NavItem, NavLink, Collapse, Card, CardHeader, CardBody } from 'reactstrap';
 import Widget from '../components/Widget/Widget';
-import { ordersService, individualOrdersService } from '../services/firebase';
-import { printService, GroupOrderForPrint } from '../services/printService';
+import { ordersService, individualOrdersService, menuService } from '../services/firebase';
+import { printService, type GroupOrderForPrint } from '../services/printService';
 import type { GroupOrder } from '../types';
 import ReceiptModal from '../components/ReceiptModal/ReceiptModal';
 import PackagingStickerModal from '../components/PackagingStickerModal/PackagingStickerModal';
+import { aggregateKitchenIngredients } from '../utils/kitchenIngredients';
 
 type OrderTab = 'individual' | 'group';
+
+// Helper function to group orders by date
+const groupOrdersByDate = (orders: any[]) => {
+  const groups: Record<string, any[]> = {};
+  
+  orders.forEach(order => {
+    const orderDate = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    let dateKey: string;
+    let displayDate: string;
+    
+    // Check if order is from today
+    if (orderDate.toDateString() === today.toDateString()) {
+      dateKey = 'today';
+      displayDate = '📅 Today';
+    }
+    // Check if order is from yesterday
+    else if (orderDate.toDateString() === yesterday.toDateString()) {
+      dateKey = 'yesterday';
+      displayDate = '📅 Yesterday';
+    }
+    // Older orders
+    else {
+      dateKey = orderDate.toDateString();
+      displayDate = `📅 ${orderDate.toLocaleDateString('en-US', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      })}`;
+    }
+    
+    if (!groups[dateKey]) {
+      groups[dateKey] = [];
+    }
+    groups[dateKey].push({ ...order, displayDate, originalDate: orderDate });
+  });
+  
+  // Sort groups by date (newest first)
+  const sortedGroups = Object.entries(groups).sort(([, ordersA], [, ordersB]) => {
+    const dateA = ordersA[0].originalDate;
+    const dateB = ordersB[0].originalDate;
+    return dateB.getTime() - dateA.getTime();
+  });
+  
+  return sortedGroups.map(([key, orders]) => ({
+    dateKey: key,
+    displayDate: orders[0].displayDate,
+    orders: orders.sort((a, b) => b.originalDate.getTime() - a.originalDate.getTime())
+  }));
+};
 
 const OrdersPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<OrderTab>('individual');
   const [groupOrders, setGroupOrders] = useState<GroupOrder[]>([]);
   const [individualOrders, setIndividualOrders] = useState<any[]>([]);
+  const [menuItems, setMenuItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
   const [stickerModalOpen, setStickerModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
+    today: false, // Today's orders are open by default
+  });
+
+  // Group orders by date using useMemo for performance
+  const groupedIndividualOrders = useMemo(() => groupOrdersByDate(individualOrders), [individualOrders]);
+  const groupedGroupOrders = useMemo(() => groupOrdersByDate(groupOrders), [groupOrders]);
+
+  const toggleSection = (dateKey: string) => {
+    setCollapsedSections(prev => ({
+      ...prev,
+      [dateKey]: !prev[dateKey]
+    }));
+  };
 
   useEffect(() => {
     // Subscribe to both order types
@@ -30,6 +100,17 @@ const OrdersPage: React.FC = () => {
     const unsubscribeIndividual = individualOrdersService.onOrdersChange((newOrders) => {
       setIndividualOrders(newOrders);
     });
+
+    // Fetch menu items for kitchen ingredients lookup
+    const fetchMenuItems = async () => {
+      try {
+        const items = await menuService.getAllMenuItems();
+        setMenuItems(items);
+      } catch (err) {
+        console.error('Error fetching menu items:', err);
+      }
+    };
+    fetchMenuItems();
 
     return () => {
       unsubscribeGroup();
@@ -114,9 +195,104 @@ const OrdersPage: React.FC = () => {
       total: order.total || 0
     };
 
-    printService.printGroupOrderReceipts(groupOrderForPrint);
+    printService.printGroupOrderReceipts(groupOrderForPrint, menuItems);
     setSuccess(`Printing ${order.participants?.length || 0} receipts...`);
     setTimeout(() => setSuccess(''), 3000);
+  };
+
+  // Helper function to categorize items
+  const categorizeItems = (items: any[]) => {
+    const meals: any[] = [];
+    const sides: any[] = [];
+    const beverages: any[] = [];
+    const drinks: string[] = [];
+    const dippingSauces: string[] = [];
+
+    items.forEach((item) => {
+      // Check if it's a beverage category
+      if (item.name.includes('Coca-Cola') || item.name.includes('Sprite') || 
+          item.name.includes('Tea') || item.name.includes('Juice') || 
+          item.name.includes('Water')) {
+        beverages.push(item);
+      }
+      // Check if it's a side
+      else if (item.name.includes('Fries') || item.name.includes('Salad') || 
+               item.name.includes('Chips') || item.name.includes('Rice') || 
+               item.name.includes('Stix') || item.name.includes('Mozzarella')) {
+        sides.push(item);
+      }
+      // Otherwise it's a meal
+      else {
+        meals.push(item);
+      }
+
+      // Extract drinks and sauces from customizations
+      if (item.customization?.drink) {
+        drinks.push(item.customization.drink);
+      }
+      if (item.customization?.dippingSauce) {
+        dippingSauces.push(item.customization.dippingSauce);
+      }
+    });
+
+    // Combine duplicate drinks and sauces with counts
+    const drinkCounts = drinks.reduce((acc: any, drink: string) => {
+      acc[drink] = (acc[drink] || 0) + 1;
+      return acc;
+    }, {});
+
+    const sauceCounts = dippingSauces.reduce((acc: any, sauce: string) => {
+      acc[sauce] = (acc[sauce] || 0) + 1;
+      return acc;
+    }, {});
+
+    // Aggregate raw kitchen ingredients using shared utility
+    const kitchenIngredientsSummary = aggregateKitchenIngredients(items, menuItems);
+
+    // Organize kitchen summary into categories
+    const mainItems: Record<string, number> = {};
+    const sidesItems: Record<string, number> = {};
+    const dippingsItems: Record<string, number> = {};
+    const drinksItems: Record<string, number> = {};
+
+    // Categorize existing ingredients
+    Object.entries(kitchenIngredientsSummary).forEach(([ingredient, count]) => {
+      const lower = ingredient.toLowerCase();
+      if (lower.includes('wings') || lower.includes('tenders') || lower.includes('chicken') || 
+          lower.includes('burger') || lower.includes('grilled')) {
+        mainItems[ingredient] = count;
+      } else if (lower.includes('fries') || lower.includes('salad') || lower.includes('rice') || 
+                 lower.includes('bread') || lower.includes('veggies') || lower.includes('vegetables') ||
+                 lower.includes('chips') || lower.includes('stix') || lower.includes('mozzarella')) {
+        sidesItems[ingredient] = count;
+      } else {
+        sidesItems[ingredient] = count;
+      }
+    });
+
+    // Add drinks from customizations
+    Object.entries(drinkCounts).forEach(([drink, count]) => {
+      drinksItems[drink] = (drinksItems[drink] || 0) + (count as number);
+    });
+    
+    // Add sauces to dippings
+    Object.entries(sauceCounts).forEach(([sauce, count]) => {
+      dippingsItems[sauce] = (dippingsItems[sauce] || 0) + (count as number);
+    });
+
+    return { 
+      meals, 
+      sides, 
+      beverages, 
+      drinks, 
+      dippingSauces, 
+      drinkCounts, 
+      sauceCounts, 
+      mainItems, 
+      sidesItems, 
+      dippingsItems, 
+      drinksItems 
+    };
   };
 
   const formatDate = (timestamp: any) => {
@@ -127,40 +303,17 @@ const OrdersPage: React.FC = () => {
     } else if (timestamp instanceof Date) {
       date = timestamp;
     }
-    return new Intl.DateTimeFormat('en-MY', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date);
+    return date.toLocaleString();
   };
-
-  if (loading) {
-    return (
-      <div>
-        <h1 className="mb-4">Orders</h1>
-        <div className="text-center py-5">
-          <div className="spinner-border text-primary" role="status">
-            <span className="visually-hidden">Loading...</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div>
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <h1>Orders</h1>
-        <div className="d-flex gap-2">
-          <Badge color="info" className="fs-6 px-3 py-2">
-            Individual: {individualOrders.length}
-          </Badge>
-          <Badge color="primary" className="fs-6 px-3 py-2">
-            Group: {groupOrders.length}
-          </Badge>
-          <Button 
+        <h1 className="page-title">
+          Orders <Badge color="primary">{activeTab === 'individual' ? individualOrders.length : groupOrders.length}</Badge>
+        </h1>
+        <div>
+          <Button
             color="danger" 
             size="sm"
             onClick={() => handleDeleteAllOrders(activeTab === 'group')}
@@ -224,83 +377,89 @@ const OrdersPage: React.FC = () => {
             </div>
           </Widget>
         ) : (
-          <Widget>
-            <Table responsive hover>
-              <thead>
-                <tr>
-                  <th>Order ID</th>
-                  <th>Customer</th>
-                  <th>Items</th>
-                  <th>Total</th>
-                  <th>Status</th>
-                  <th>Date</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {individualOrders.map((order) => (
-                  <tr key={order.id}>
-                    <td><strong>{order.id.substring(0, 8).toUpperCase()}</strong></td>
-                    <td>{order.userName || 'Guest'}</td>
-                    <td>{order.items?.length || 0} items</td>
-                    <td><strong>RM {(order.total || 0).toFixed(2)}</strong></td>
-                    <td>
-                      <Badge color={getStatusColor(order.status || 'pending')}>
-                        {(order.status || 'pending').toUpperCase()}
-                      </Badge>
-                    </td>
-                    <td><small className="text-muted">{formatDate(order.createdAt)}</small></td>
-                    <td>
-                      <div className="d-flex gap-2">
-                        {/* Show "Mark as Ready" button only for preparing orders */}
-                        {order.status === 'preparing' && (
-                          <Button 
-                            size="sm" 
-                            color="success"
-                            onClick={() => handleUpdateStatus(order.id, 'ready', false)}
-                          >
-                            <i className="bi bi-bell me-1"></i>Mark Ready
-                          </Button>
-                        )}
-                        {/* Show cancel button for non-final orders */}
-                        {order.status !== 'delivered' && order.status !== 'cancelled' && (
-                          <Button 
-                            size="sm" 
-                            color="danger"
-                            outline
-                            onClick={() => handleUpdateStatus(order.id, 'cancelled', false)}
-                          >
-                            <i className="bi bi-x-circle"></i>
-                          </Button>
-                        )}
-                        {/* Receipt button for all orders */}
-                        <Button 
-                          size="sm" 
-                          color="info" 
-                          outline
-                          onClick={() => {
-                            setSelectedOrder(order);
-                            setReceiptModalOpen(true);
-                          }}
-                        >
-                          <i className="bi bi-receipt"></i>
-                        </Button>
-                        <Button 
-                          size="sm" 
-                          color="danger"
-                          outline
-                          onClick={() => handleDeleteOrder(order.id, false)}
-                          title="Delete order (dev only)"
-                        >
-                          <i className="bi bi-trash"></i>
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          </Widget>
+          groupedIndividualOrders.map(({ dateKey, displayDate, orders }) => (
+            <Card key={dateKey} className="mb-3">
+              <CardHeader 
+                onClick={() => toggleSection(dateKey)}
+                style={{ cursor: 'pointer', backgroundColor: '#f8f9fa' }}
+                className="d-flex justify-content-between align-items-center"
+              >
+                <div>
+                  <strong>{displayDate}</strong>
+                  <Badge color="secondary" className="ms-2">{orders.length} orders</Badge>
+                </div>
+                <i className={`bi bi-chevron-${collapsedSections[dateKey] ? 'down' : 'up'}`}></i>
+              </CardHeader>
+              <Collapse isOpen={!collapsedSections[dateKey]}>
+                <CardBody className="p-0">
+                  <Table responsive hover className="mb-0">
+                    <thead>
+                      <tr>
+                        <th>Order ID</th>
+                        <th>Customer</th>
+                        <th>Items</th>
+                        <th>Total</th>
+                        <th>Status</th>
+                        <th>Time</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {orders.map((order) => (
+                        <tr key={order.id}>
+                          <td><strong>{order.id.substring(0, 8).toUpperCase()}</strong></td>
+                          <td>{order.userName || 'Guest'}</td>
+                          <td>{order.items?.length || 0} items</td>
+                          <td><strong>RM {(order.total || 0).toFixed(2)}</strong></td>
+                          <td>
+                            <Badge color={getStatusColor(order.status || 'pending')}>
+                              {(order.status || 'pending').toUpperCase()}
+                            </Badge>
+                          </td>
+                          <td>{order.createdAt?.toDate ? order.createdAt.toDate().toLocaleTimeString() : 'N/A'}</td>
+                          <td>
+                            <div className="d-flex gap-1">
+                              {order.status !== 'ready' && order.status !== 'delivered' && (
+                                <Button 
+                                  size="sm" 
+                                  color="success"
+                                  outline
+                                  onClick={() => handleUpdateStatus(order.id, 'ready', false)}
+                                  title="Mark as ready for pickup"
+                                >
+                                  <i className="bi bi-check-circle"></i> Ready
+                                </Button>
+                              )}
+                              <Button 
+                                size="sm" 
+                                color="info"
+                                outline
+                                onClick={() => {
+                                  setSelectedOrder(order);
+                                  setReceiptModalOpen(true);
+                                }}
+                              >
+                                <i className="bi bi-receipt"></i>
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                color="danger"
+                                outline
+                                onClick={() => handleDeleteOrder(order.id, false)}
+                                title="Delete order (dev only)"
+                              >
+                                <i className="bi bi-trash"></i>
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                </CardBody>
+              </Collapse>
+            </Card>
+          ))
         )
       ) : (
         groupOrders.length === 0 ? (
@@ -311,7 +470,23 @@ const OrdersPage: React.FC = () => {
             </div>
           </Widget>
         ) : (
-          groupOrders.map((order: any) => (
+          groupedGroupOrders.map(({ dateKey, displayDate, orders }) => (
+            <div key={dateKey} className="mb-4">
+              <Card className="mb-2">
+                <CardHeader 
+                  onClick={() => toggleSection(dateKey)}
+                  style={{ cursor: 'pointer', backgroundColor: '#f8f9fa' }}
+                  className="d-flex justify-content-between align-items-center"
+                >
+                  <div>
+                    <strong>{displayDate}</strong>
+                    <Badge color="secondary" className="ms-2">{orders.length} orders</Badge>
+                  </div>
+                  <i className={`bi bi-chevron-${collapsedSections[dateKey] ? 'down' : 'up'}`}></i>
+                </CardHeader>
+              </Card>
+              <Collapse isOpen={!collapsedSections[dateKey]}>
+                {orders.map((order: any) => (
         <Widget key={order.id} title={
           <div className="d-flex justify-content-between align-items-center w-100">
             <div>
@@ -323,7 +498,7 @@ const OrdersPage: React.FC = () => {
               {order.status}
             </Badge>
           </div>
-        }>
+        }> 
           <Row className="mb-3">
             <Col md={12} className="mb-3">
               {/* Status Progress Timeline */}
@@ -400,33 +575,113 @@ const OrdersPage: React.FC = () => {
                 <thead>
                   <tr>
                     <th>Item</th>
-                    <th>Customization</th>
                     <th>Qty</th>
                     <th>Price</th>
                     <th>Subtotal</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(order.items || []).map((item: any, idx: number) => (
-                    <tr key={idx}>
-                      <td><strong>{item.name}</strong></td>
-                      <td>
-                        <small className="text-muted">
-                          {item.customization?.flavor && <div>Flavor: {item.customization.flavor}</div>}
-                          {item.customization?.dippingSauce && <div>Sauce: {item.customization.dippingSauce}</div>}
-                          {item.customization?.drink && <div>Drink: {item.customization.drink}</div>}
-                          {!item.customization?.flavor && !item.customization?.dippingSauce && !item.customization?.drink && 'None'}
-                        </small>
-                      </td>
-                      <td className="text-center">{item.quantity}</td>
-                      <td>RM {(item.price || 0).toFixed(2)}</td>
-                      <td><strong>RM {(item.subtotal || 0).toFixed(2)}</strong></td>
-                    </tr>
-                  ))}
-                  <tr className="table-active">
-                    <td colSpan={4} className="text-end"><strong>TOTAL</strong></td>
-                    <td><strong>RM {(order.total || 0).toFixed(2)}</strong></td>
-                  </tr>
+                  {(() => {
+                    const { meals, sides, beverages, drinks, dippingSauces, drinkCounts, sauceCounts, mainItems, sidesItems, dippingsItems, drinksItems } = categorizeItems(order.items || []);
+                    
+                    return (
+                      <>
+                        {/* All Items */}
+                        {[...meals, ...sides, ...beverages].map((item: any, idx: number) => (
+                          <tr key={`item-${idx}`}>
+                            <td>
+                              <strong>{item.name}</strong>
+                              {item.customization?.boneType && (
+                                <div><small className="text-muted">&gt; {item.customization.boneType}</small></div>
+                              )}
+                              {item.customization?.flavor && (
+                                <div><small className="text-muted">&gt; Flavor: {item.customization.flavor.replace(/_/g, ' ')}</small></div>
+                              )}
+                              {item.customization?.dippingSauce && (
+                                <div style={{ backgroundColor: '#ffeb9c', padding: '2px 4px', marginTop: '2px' }}>
+                                  <small><strong>&gt; *** DIP: {item.customization.dippingSauce.replace(/_/g, ' ')} ***</strong></small>
+                                </div>
+                              )}
+                              {item.customization?.friesExchange && (
+                                <div><small className="text-muted">&gt; Side: {item.customization.friesExchange.name}</small></div>
+                              )}
+                              {item.customization?.saladType && (
+                                <div><small className="text-muted">&gt; Salad: {item.customization.saladType}</small></div>
+                              )}
+                              {item.customization?.drink && (
+                                <div><small className="text-muted">&gt; Drink: {item.customization.drink}</small></div>
+                              )}
+                            </td>
+                            <td className="text-center">{item.quantity}</td>
+                            <td>RM {(item.price || 0).toFixed(2)}</td>
+                            <td><strong>RM {(item.subtotal || 0).toFixed(2)}</strong></td>
+                          </tr>
+                        ))}
+
+                        {/* Kitchen Summary with Categories */}
+                        {(Object.keys(mainItems).length > 0 || 
+                          Object.keys(sidesItems).length > 0 || 
+                          Object.keys(dippingsItems).length > 0 || 
+                          Object.keys(drinksItems).length > 0) && (
+                          <>
+                            <tr style={{ backgroundColor: '#ffe6e6', borderTop: '3px solid #000' }}>
+                              <td colSpan={4} className="text-center">
+                                <strong style={{ fontSize: '1.1em' }}>========================================</strong><br/>
+                                <strong style={{ fontSize: '1.1em' }}>&gt;&gt; KITCHEN SUMMARY &lt;&lt;</strong><br/>
+                                <strong style={{ fontSize: '1.1em' }}>========================================</strong>
+                              </td>
+                            </tr>
+                            <tr>
+                              <td colSpan={4} style={{ border: '2px solid #000', padding: '15px' }}>
+                                {Object.keys(mainItems).length > 0 && (
+                                  <div style={{ marginBottom: '10px' }}>
+                                    <strong>MAIN:</strong>
+                                    {Object.entries(mainItems).map(([ingredient, count]: [string, any], idx) => (
+                                      <div key={idx}>- {count} {ingredient}</div>
+                                    ))}
+                                  </div>
+                                )}
+                                {Object.keys(sidesItems).length > 0 && (
+                                  <div style={{ marginBottom: '10px' }}>
+                                    <strong>SIDES:</strong>
+                                    {Object.entries(sidesItems).map(([ingredient, count]: [string, any], idx) => (
+                                      <div key={idx}>- {count} {ingredient}</div>
+                                    ))}
+                                  </div>
+                                )}
+                                {Object.keys(dippingsItems).length > 0 && (
+                                  <div style={{ marginBottom: '10px' }}>
+                                    <strong>DIPPINGS:</strong>
+                                    {Object.entries(dippingsItems).map(([sauce, count]: [string, any], idx) => (
+                                      <div key={idx}>- {count} {sauce}</div>
+                                    ))}
+                                  </div>
+                                )}
+                                {Object.keys(drinksItems).length > 0 && (
+                                  <div>
+                                    <strong>DRINKS:</strong>
+                                    {Object.entries(drinksItems).map(([drink, count]: [string, any], idx) => (
+                                      <div key={idx}>- {count} {drink}</div>
+                                    ))}
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                            <tr style={{ backgroundColor: '#ffe6e6' }}>
+                              <td colSpan={4} className="text-center">
+                                <strong style={{ fontSize: '1.1em' }}>========================================</strong>
+                              </td>
+                            </tr>
+                          </>
+                        )}
+
+                        <tr className="table-active">
+                          <td colSpan={3} className="text-end"><strong>TOTAL</strong></td>
+                          <td><strong>RM {(order.total || 0).toFixed(2)}</strong></td>
+                        </tr>
+                      </>
+                    );
+                  })()}
                 </tbody>
               </Table>
             </Col>
@@ -502,6 +757,9 @@ const OrdersPage: React.FC = () => {
             </Button>
           </div>
         </Widget>
+          ))}
+              </Collapse>
+            </div>
           ))
         )
       )}
