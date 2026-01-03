@@ -237,6 +237,7 @@ const menuItems = [
     requiresCustomization: true,
     customizationOptions: {
       requiresBeverage: true,
+      requiresSaladChoice: true,
       allowFriesExchange: true,
       beverages: BEVERAGES,
       friesExchanges: FRIES_EXCHANGES,
@@ -496,7 +497,8 @@ const menuItems = [
     category: 'Burgers & Sandwiches',
     imageUrl: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400',
     isAvailable: true,
-    requiresCustomization: false
+    requiresCustomization: false,
+    customizationOptions: {}
   },
   {
     name: 'Cheeseburger',
@@ -505,7 +507,8 @@ const menuItems = [
     category: 'Burgers & Sandwiches',
     imageUrl: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400',
     isAvailable: true,
-    requiresCustomization: false
+    requiresCustomization: false,
+    customizationOptions: {}
   },
   {
     name: 'Beef Tortilla Wrap',
@@ -514,7 +517,8 @@ const menuItems = [
     category: 'Burgers & Sandwiches',
     imageUrl: 'https://images.unsplash.com/photo-1626700051175-6818013e1d4f?w=400',
     isAvailable: true,
-    requiresCustomization: false
+    requiresCustomization: false,
+    customizationOptions: {}
   },
   {
     name: 'Grilled Chicken Sandwich',
@@ -523,7 +527,8 @@ const menuItems = [
     category: 'Burgers & Sandwiches',
     imageUrl: 'https://images.unsplash.com/photo-1553979459-d2229ba7433b?w=400',
     isAvailable: true,
-    requiresCustomization: false
+    requiresCustomization: false,
+    customizationOptions: {}
   },
   {
     name: 'Grilled Chicken Tortilla Wrap',
@@ -532,7 +537,8 @@ const menuItems = [
     category: 'Burgers & Sandwiches',
     imageUrl: 'https://images.unsplash.com/photo-1626700051175-6818013e1d4f?w=400',
     isAvailable: true,
-    requiresCustomization: false
+    requiresCustomization: false,
+    customizationOptions: {}
   },
   {
     name: 'Chicken Tender Sandwich',
@@ -541,7 +547,8 @@ const menuItems = [
     category: 'Burgers & Sandwiches',
     imageUrl: 'https://images.unsplash.com/photo-1619740455993-9e2e38c2f5f7?w=400',
     isAvailable: true,
-    requiresCustomization: false
+    requiresCustomization: false,
+    customizationOptions: {}
   },
   {
     name: 'Chicken Tender Tortilla Wrap',
@@ -550,7 +557,8 @@ const menuItems = [
     category: 'Burgers & Sandwiches',
     imageUrl: 'https://images.unsplash.com/photo-1604467794349-0b74285de7e7?w=400',
     isAvailable: true,
-    requiresCustomization: false
+    requiresCustomization: false,
+    customizationOptions: {}
   },
 
   // ====================
@@ -653,7 +661,8 @@ const menuItems = [
     category: 'Salads',
     imageUrl: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
     isAvailable: true,
-    requiresCustomization: false
+    requiresCustomization: false,
+    customizationOptions: {}
   },
   {
     name: 'Caesar Salad',
@@ -662,7 +671,8 @@ const menuItems = [
     category: 'Salads',
     imageUrl: 'https://images.unsplash.com/photo-1546793665-c74683f339c1?w=400',
     isAvailable: true,
-    requiresCustomization: false
+    requiresCustomization: false,
+    customizationOptions: {}
   },
   {
     name: 'Garden Salad with Grilled Chicken',
@@ -671,7 +681,8 @@ const menuItems = [
     category: 'Salads',
     imageUrl: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
     isAvailable: true,
-    requiresCustomization: false
+    requiresCustomization: false,
+    customizationOptions: {}
   },
   {
     name: 'Caesar Salad with Grilled Chicken',
@@ -680,7 +691,8 @@ const menuItems = [
     category: 'Salads',
     imageUrl: 'https://images.unsplash.com/photo-1546793665-c74683f339c1?w=400',
     isAvailable: true,
-    requiresCustomization: false
+    requiresCustomization: false,
+    customizationOptions: {}
   },
   {
     name: 'Garden Salad with Chicken Tender',
@@ -689,7 +701,8 @@ const menuItems = [
     category: 'Salads',
     imageUrl: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
     isAvailable: true,
-    requiresCustomization: false
+    requiresCustomization: false,
+    customizationOptions: {}
   },
   {
     name: 'Caesar Salad with Chicken Tender',
@@ -698,7 +711,8 @@ const menuItems = [
     category: 'Salads',
     imageUrl: 'https://images.unsplash.com/photo-1546793665-c74683f339c1?w=400',
     isAvailable: true,
-    requiresCustomization: false
+    requiresCustomization: false,
+    customizationOptions: {}
   },
 
   // ====================

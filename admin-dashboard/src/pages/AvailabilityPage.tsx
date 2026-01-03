@@ -46,11 +46,17 @@ const DIPPING_SAUCES = [
   'Bleu Cheese'
 ];
 
+const BONE_TYPES = [
+  'Original',
+  'Boneless'
+];
+
 interface AvailabilityState {
   flavors: string[];
   beverages: string[];
   sides: string[];
   dippingSauces: string[];
+  boneTypes: string[];
 }
 
 const AvailabilityPage: React.FC = () => {
@@ -63,11 +69,12 @@ const AvailabilityPage: React.FC = () => {
     flavors: FLAVORS,
     beverages: BEVERAGES,
     sides: SIDES,
-    dippingSauces: DIPPING_SAUCES
+    dippingSauces: DIPPING_SAUCES,
+    boneTypes: BONE_TYPES
   });
 
   useEffect(() => {
-    loadAvailability();
+    loadAvailability(); 
   }, []);
 
   const loadAvailability = async () => {
@@ -77,8 +84,25 @@ const AvailabilityPage: React.FC = () => {
       const docSnap = await getDoc(docRef);
       
       if (docSnap.exists()) {
-        const data = docSnap.data() as AvailabilityState;
-        setAvailability(data);
+        const data = docSnap.data();
+        const loadedAvailability = {
+          flavors: data.flavors || FLAVORS,
+          beverages: data.beverages || BEVERAGES,
+          sides: data.sides || SIDES,
+          dippingSauces: data.dippingSauces || DIPPING_SAUCES,
+          boneTypes: data.boneTypes || BONE_TYPES
+        };
+        setAvailability(loadedAvailability);
+        
+        // If boneTypes field is missing, save it immediately with default values
+        if (!data.boneTypes) {
+          console.log('boneTypes field missing, initializing with defaults');
+          await setDoc(docRef, loadedAvailability, { merge: true });
+        }
+      } else {
+        // Document doesn't exist, create it with defaults
+        console.log('Availability document does not exist, creating with defaults');
+        await setDoc(docRef, availability);
       }
     } catch (err: any) {
       console.error('Error loading availability:', err);
@@ -114,8 +138,11 @@ const AvailabilityPage: React.FC = () => {
       const newItems = items.includes(item)
         ? items.filter(i => i !== item)
         : [...items, item];
+      console.log(`Toggling ${category} - ${item}:`, newItems);
       return { ...prev, [category]: newItems };
     });
+    // Auto-save after toggle
+    setTimeout(() => saveAvailability(), 500);
   };
 
   const toggleAll = (category: keyof AvailabilityState, allItems: string[], enable: boolean) => {
@@ -263,6 +290,7 @@ const AvailabilityPage: React.FC = () => {
         </Alert>
       )}
 
+      {renderSection('Bone Types (Wings)', 'boneTypes', BONE_TYPES, 'bi-egg-fried')}
       {renderSection('Flavors', 'flavors', FLAVORS, 'bi-fire')}
       {renderSection('Beverages', 'beverages', BEVERAGES, 'bi-cup-straw')}
       {renderSection('Sides', 'sides', SIDES, 'bi-basket')}

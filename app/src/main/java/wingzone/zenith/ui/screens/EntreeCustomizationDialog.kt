@@ -140,7 +140,10 @@ fun EntreeCustomizationDialog(
                     
                     // Bone Type Selection (for wings)
                     // DEBUG: Check if this condition is met
-                    android.util.Log.d("EntreeCustomization", "Menu: ${menuItem.name}, RequiresBoneType: ${menuItem.customizationOptions?.requiresBoneType}, AvailableTypes: ${menuItem.customizationOptions?.availableBoneTypes}")
+                    android.util.Log.d("EntreeCustomization", "Menu: ${menuItem.name}")
+                    android.util.Log.d("EntreeCustomization", "RequiresBoneType: ${menuItem.customizationOptions?.requiresBoneType}")
+                    android.util.Log.d("EntreeCustomization", "AvailableTypes: ${menuItem.customizationOptions?.availableBoneTypes}")
+                    android.util.Log.d("EntreeCustomization", "AvailabilitySettings BoneTypes: ${availabilitySettings.boneTypes}")
                     
                     if (menuItem.customizationOptions?.requiresBoneType == true) {
                         item {
@@ -161,10 +164,13 @@ fun EntreeCustomizationDialog(
                                 val availableBoneTypes = menuItem.customizationOptions.availableBoneTypes
                                 val boneTypesToShow = if (!availableBoneTypes.isNullOrEmpty()) {
                                     BoneType.values().filter { boneType ->
-                                        availableBoneTypes.any { it.equals(boneType.displayName, ignoreCase = true) }
+                                        availableBoneTypes.any { it.equals(boneType.displayName, ignoreCase = true) } &&
+                                        availabilitySettings.boneTypes.contains(boneType.displayName) // Check availability
                                     }
                                 } else {
-                                    BoneType.values().toList()
+                                    BoneType.values().filter { boneType ->
+                                        availabilitySettings.boneTypes.contains(boneType.displayName) // Check availability
+                                    }
                                 }
                                 
                                 android.util.Log.d("EntreeCustomization", "BoneTypesToShow: $boneTypesToShow")

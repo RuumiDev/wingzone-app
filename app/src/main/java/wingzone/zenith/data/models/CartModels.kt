@@ -91,9 +91,21 @@ data class MenuItem(
     val price: Double,
     val category: String,
     val imageUrl: String? = null,
+    val displayOrder: Int? = null, // For sorting items within categories
+    val kitchenIngredients: KitchenIngredients? = null, // Structured raw materials
     val requiresCustomization: Boolean = false, // True for entrees
     val customizationOptions: CustomizationOptions? = null,
     val isAvailable: Boolean = true // Track availability status
+)
+
+data class KitchenIngredient(
+    val type: String, // "wings", "fries", "bread", "tenders", "salad", etc.
+    val quantity: Int,
+    val requiresSelection: Boolean = false // true for wings (bone type selection)
+)
+
+data class KitchenIngredients(
+    val ingredients: List<KitchenIngredient> = emptyList()
 )
 
 data class CustomizationOptions(
@@ -112,7 +124,9 @@ data class CustomizationOptions(
 data class FriesExchangeOption(
     val name: String,
     val regularPrice: Double,
-    val jumboPrice: Double?
+    val jumboPrice: Double?,
+    val selectedSize: String = "regular", // "regular" or "jumbo"
+    val selectedFlavor: String? = null // For Flavor Rub Fries (Blackened Voodoo or Lemon Pepper)
 )
 
 // Cart item customization
@@ -121,7 +135,8 @@ data class EntreeCustomization(
     val dippingSauce: DippingSauce,
     val drink: Drink,
     val boneType: BoneType? = null,
-    val friesExchange: FriesExchangeOption? = null
+    val friesExchange: FriesExchangeOption? = null,
+    val saladType: String? = null // "Garden Salad" or "Caesar Salad"
 )
 
 // Cart item
@@ -133,7 +148,17 @@ data class CartItem(
     val specialInstructions: String? = null
 ) {
     val subtotal: Double
-        get() = menuItem.price * quantity
+        get() {
+            val basePrice = menuItem.price * quantity
+            val sideExchangeCost = customization?.friesExchange?.let { exchange ->
+                val pricePerUnit = when (exchange.selectedSize) {
+                    "jumbo" -> exchange.jumboPrice ?: exchange.regularPrice
+                    else -> exchange.regularPrice
+                }
+                pricePerUnit * quantity
+            } ?: 0.0
+            return basePrice + sideExchangeCost
+        }
 }
 
 // App Settings (configurable by admin)

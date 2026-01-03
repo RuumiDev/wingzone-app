@@ -13,6 +13,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage = 'dashboard', onNavigate 
     { id: 'availability', icon: 'bi-toggles', label: 'Availability' },
     { id: 'orders', icon: 'bi-bag-check', label: 'Orders' },
     { id: 'users', icon: 'bi-people', label: 'Users' },
+    { id: 'settings', icon: 'bi-gear', label: 'Settings' },
     { id: 'seed', icon: 'bi-upload', label: 'Import Menu' },
   ];
 

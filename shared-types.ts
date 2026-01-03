@@ -49,11 +49,23 @@ export interface MenuItem {
   updatedAt: Date | string;
 }
 
+// Fries Exchange Option (for side substitutions)
+export interface FriesExchangeOption {
+  name: string;
+  regularPrice: number;
+  jumboPrice: number | null;
+  selectedSize?: 'regular' | 'jumbo'; // Track which size customer selected
+  selectedFlavor?: string; // For Flavor Rub Fries (Blackened Voodoo or Lemon Pepper)
+}
+
 // Customization Options
 export interface EntreeCustomization {
   flavor: string;
   dippingSauce: string;
   drink: string;
+  boneType?: string; // 'Original' or 'Boneless'
+  friesExchange?: FriesExchangeOption; // Track which side customer actually chose
+  saladType?: string; // For items that include salad choice (Garden or Caesar)
 }
 
 // Cart Item

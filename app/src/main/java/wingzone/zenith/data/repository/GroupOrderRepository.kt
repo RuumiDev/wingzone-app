@@ -19,6 +19,21 @@ class GroupOrderRepository(private val authRepository: IAuthRepository) {
     private val _groupOrders = MutableStateFlow<List<GroupOrder>>(emptyList())
     val groupOrders: StateFlow<List<GroupOrder>> = _groupOrders.asStateFlow()
     
+    // Helper function to serialize kitchen ingredients
+    private fun serializeKitchenIngredients(kitchen: KitchenIngredients?): Any? {
+        return kitchen?.let {
+            hashMapOf(
+                "ingredients" to it.ingredients.map { ingredient ->
+                    hashMapOf(
+                        "type" to ingredient.type,
+                        "quantity" to ingredient.quantity,
+                        "requiresSelection" to ingredient.requiresSelection
+                    )
+                }
+            )
+        }
+    }
+    
     private val _currentGroupOrder = MutableStateFlow<GroupOrder?>(null)
     val currentGroupOrder: StateFlow<GroupOrder?> = _currentGroupOrder.asStateFlow()
     
@@ -77,7 +92,9 @@ class GroupOrderRepository(private val authRepository: IAuthRepository) {
                                 "menuItemId" to item.menuItem.id,
                                 "menuItemName" to item.menuItem.name,
                                 "quantity" to item.quantity,
-                                "price" to item.menuItem.price
+                                "price" to item.menuItem.price,
+                                "kitchenIngredients" to serializeKitchenIngredients(item.menuItem.kitchenIngredients),
+                                "customization" to item.customization
                             )
                         }
                     )
@@ -154,7 +171,9 @@ class GroupOrderRepository(private val authRepository: IAuthRepository) {
                                     "menuItemId" to item.menuItem.id,
                                     "menuItemName" to item.menuItem.name,
                                     "quantity" to item.quantity,
-                                    "price" to item.menuItem.price
+                                    "price" to item.menuItem.price,
+                                    "kitchenIngredients" to serializeKitchenIngredients(item.menuItem.kitchenIngredients),
+                                    "customization" to item.customization
                                 )
                             }
                         )
@@ -176,16 +195,16 @@ class GroupOrderRepository(private val authRepository: IAuthRepository) {
     
     private fun parseGroupOrderFromFirebase(data: Map<String, Any>): GroupOrder? {
         return try {
-            val membersList = (data["members"] as? List<*>)?.mapNotNull { memberData ->
-                val member = memberData as? Map<*, *> ?: return@mapNotNull null
+            val membersList = (data["members"] as? List<*>)?.mapNotNull memberLoop@{ memberData ->
+                val member = memberData as? Map<*, *> ?: return@memberLoop null
                 
                 // Parse cart items
-                val cartItems = (member["cartItems"] as? List<*>)?.mapNotNull { itemData ->
-                    val item = itemData as? Map<*, *> ?: return@mapNotNull null
+                val cartItems = (member["cartItems"] as? List<*>)?.mapNotNull itemLoop@{ itemData ->
+                    val item = itemData as? Map<*, *> ?: return@itemLoop null
                     CartItem(
                         menuItem = MenuItem(
-                            id = item["menuItemId"] as? String ?: return@mapNotNull null,
-                            name = item["menuItemName"] as? String ?: return@mapNotNull null,
+                            id = item["menuItemId"] as? String ?: return@itemLoop null,
+                            name = item["menuItemName"] as? String ?: return@itemLoop null,
                             price = (item["price"] as? Number)?.toDouble() ?: 0.0,
                             description = "",
                             category = "entree",
@@ -199,8 +218,8 @@ class GroupOrderRepository(private val authRepository: IAuthRepository) {
                 } ?: emptyList()
                 
                 GroupMember(
-                    userId = member["userId"] as? String ?: return@mapNotNull null,
-                    name = member["name"] as? String ?: return@mapNotNull null,
+                    userId = member["userId"] as? String ?: return@memberLoop null,
+                    name = member["name"] as? String ?: return@memberLoop null,
                     profileImageUrl = member["profileImageUrl"] as? String,
                     isHost = member["isHost"] as? Boolean ?: false,
                     hasPaid = member["hasPaid"] as? Boolean ?: false,
@@ -282,7 +301,9 @@ class GroupOrderRepository(private val authRepository: IAuthRepository) {
                                         "menuItemId" to item.menuItem.id,
                                         "menuItemName" to item.menuItem.name,
                                         "quantity" to item.quantity,
-                                        "price" to item.menuItem.price
+                                        "price" to item.menuItem.price,
+                                "kitchenIngredients" to serializeKitchenIngredients(item.menuItem.kitchenIngredients),
+                                        "customization" to item.customization
                                     )
                                 }
                             )
@@ -337,7 +358,9 @@ class GroupOrderRepository(private val authRepository: IAuthRepository) {
                                     "menuItemId" to item.menuItem.id,
                                     "menuItemName" to item.menuItem.name,
                                     "quantity" to item.quantity,
-                                    "price" to item.menuItem.price
+                                    "price" to item.menuItem.price,
+                                    "kitchenIngredients" to serializeKitchenIngredients(item.menuItem.kitchenIngredients),
+                                    "customization" to item.customization
                                 )
                             }
                         )
@@ -536,7 +559,9 @@ class GroupOrderRepository(private val authRepository: IAuthRepository) {
                                     "menuItemId" to item.menuItem.id,
                                     "menuItemName" to item.menuItem.name,
                                     "quantity" to item.quantity,
-                                    "price" to item.menuItem.price
+                                    "price" to item.menuItem.price,
+                                    "kitchenIngredients" to serializeKitchenIngredients(item.menuItem.kitchenIngredients),
+                                    "customization" to item.customization
                                 )
                             }
                         )

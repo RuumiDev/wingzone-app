@@ -93,6 +93,12 @@ class MenuViewModel : ViewModel() {
             match?.groupValues?.get(1)?.toIntOrNull() ?: 999
         }
         
+        // Sort Wings by displayOrder (just wings first, then with fries)
+        val sortedWings = (groupedItems["Wings"] ?: emptyList()).sortedWith(
+            compareBy<MenuItem> { it.displayOrder ?: 999 }
+                .thenBy { it.name }
+        )
+        
         // Filter beverages based on availability
         val availableBeverages = (groupedItems["Beverages"] ?: emptyList()).filter { beverage ->
             availabilitySettings.beverages.contains(beverage.name)
@@ -100,7 +106,7 @@ class MenuViewModel : ViewModel() {
         
         val categories = listOf(
             MenuCategory("combos", "Combo Meals", Icons.Default.Star, sortedComboMeals),
-            MenuCategory("wings", "Wings", Icons.Default.ShoppingCart, groupedItems["Wings"] ?: emptyList()),
+            MenuCategory("wings", "Wings", Icons.Default.ShoppingCart, sortedWings),
             MenuCategory("tenders", "Tenders", Icons.Default.ShoppingCart, groupedItems["Tenders"] ?: emptyList()),
             MenuCategory("burgers", "Burgers & Sandwiches", Icons.Default.ShoppingCart, groupedItems["Burgers & Sandwiches"] ?: emptyList()),
             MenuCategory("local", "Local Favorites", Icons.Default.Home, groupedItems["Local Favorites"] ?: emptyList()),
