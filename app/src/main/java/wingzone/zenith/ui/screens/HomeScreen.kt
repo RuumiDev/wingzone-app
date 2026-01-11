@@ -49,12 +49,18 @@ fun HomeScreen(
     authViewModel: AuthViewModel = AuthViewModel(),
     cartViewModel: CartViewModel = CartViewModel(),
     groupOrderViewModel: GroupOrderViewModel = GroupOrderViewModel(),
+    lobbyViewModel: wingzone.zenith.viewmodel.LobbyViewModel,
     onAuthRequired: () -> Unit = {},
     onNavigateToOrderTracking: () -> Unit = {},
     onNavigateToOrderHistory: () -> Unit = {},
-    onNavigateToOrderDetails: (String) -> Unit = {}
+    onNavigateToOrderDetails: (String) -> Unit = {},
+    onNavigateToCreateLobby: () -> Unit = {},
+    onNavigateToJoinLobby: () -> Unit = {},
+    onNavigateToGroupOrder: () -> Unit = {},
+    onNavigateToLobbyDetail: (String) -> Unit = {},
+    initialTab: Int = 0
 ) {
-    var selectedTab by remember { mutableStateOf(0) }
+    var selectedTab by remember { mutableStateOf(initialTab) }
     var showExitDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val activity = context as? Activity
@@ -67,6 +73,19 @@ fun HomeScreen(
     // Back handler for other tabs - return to home
     BackHandler(enabled = selectedTab != 0) {
         selectedTab = 0
+    }
+    
+    // Clear currentGroupOrder when navigating away from menu tab (not in lobby context)
+    LaunchedEffect(selectedTab) {
+        if (selectedTab != 1) {
+            // Clear group order context when leaving menu
+            // This ensures personal cart is used by default
+            val currentOrder = groupOrderViewModel.currentGroupOrder.value
+            if (currentOrder != null && selectedTab != 3) {
+                // Only clear if not going to Group Order tab
+                groupOrderViewModel.setCurrentGroupOrder(null)
+            }
+        }
     }
     
     // Exit confirmation dialog
@@ -109,7 +128,11 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     // Group Order Feature Banner
-                    GroupOrderBanner(onNavigateToGroupOrder = { selectedTab = 2 })
+                    GroupOrderBanner(
+                        onNavigateToCreateLobby = onNavigateToCreateLobby,
+                        onNavigateToJoinLobby = onNavigateToJoinLobby,
+                        onOrderNow = { selectedTab = 3 }
+                    )
                     
                     Spacer(modifier = Modifier.height(16.dp))
                     
@@ -143,7 +166,11 @@ fun HomeScreen(
                 GroupOrderScreen(
                     authViewModel = authViewModel,
                     groupOrderViewModel = groupOrderViewModel,
-                    onAuthRequired = onAuthRequired
+                    lobbyViewModel = lobbyViewModel,
+                    onAuthRequired = onAuthRequired,
+                    onNavigateToCreateLobby = onNavigateToCreateLobby,
+                    onNavigateToJoinLobby = onNavigateToJoinLobby,
+                    onNavigateToLobbyDetail = onNavigateToLobbyDetail
                 )
             }
             4 -> {
@@ -565,71 +592,131 @@ data class PromoData(
 )
 
 @Composable
-fun GroupOrderBanner(onNavigateToGroupOrder: () -> Unit) {
+fun GroupOrderBanner(
+    onNavigateToCreateLobby: () -> Unit,
+    onNavigateToJoinLobby: () -> Unit,
+    onOrderNow: () -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = WingZoneOrange),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        onClick = onNavigateToGroupOrder
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Star,
-                        contentDescription = "Special",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "NEW FEATURE",
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Text(
-                    text = "Group Order",
-                    color = Color.White,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.ExtraBold
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Star,
+                    contentDescription = "Special",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
                 )
-                
-                Spacer(modifier = Modifier.height(4.dp))
-                
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Order together & save more!",
-                    color = Color.White.copy(alpha = 0.95f),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium
+                    text = "NEW FEATURE",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
             
-            Box(
-                modifier = Modifier
-                    .size(80.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Image(
-                    painter = painterResource(id = wingzone.zenith.R.drawable.wingzone),
-                    contentDescription = "WingZone Logo",
-                    modifier = Modifier.size(56.dp)
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Text(
+                text = "Lobby / Group Order",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White,
+                    fontSize = 24.sp
                 )
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Text(
+                text = "Order together & save more!",
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    color = Color.White.copy(alpha = 0.95f),
+                    fontWeight = FontWeight.Medium
+                ),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Order Now Button
+            Button(
+                onClick = onOrderNow,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White,
+                    contentColor = WingZoneOrange
+                ),
+                shape = RoundedCornerShape(12.dp),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp)
+            ) {
+                Text(
+                    text = "Order Now!",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(
+                    imageVector = Icons.Default.ShoppingCart,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onNavigateToCreateLobby,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color.White
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White.copy(alpha = 0.7f)),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = "Create",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                }
+                
+                OutlinedButton(
+                    onClick = onNavigateToJoinLobby,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color.White
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White.copy(alpha = 0.7f)),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = "Join",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                }
             }
         }
     }

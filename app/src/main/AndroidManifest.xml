@@ -5,6 +5,9 @@
     <!-- Notification permissions -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    
+    <!-- Camera permission for QR scanning -->
+    <uses-permission android:name="android.permission.CAMERA" />
 
     <application
         android:allowBackup="true"

@@ -462,7 +462,12 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
                           
                           // Main items (wings, tenders)
                           if (ingredient.requiresSelection && boneType) {
-                            key = `${boneType} ${ingredient.type}`;
+                            // Normalize "Original" to plain ingredient name since it's the default
+                            if (boneType.toLowerCase() === 'original') {
+                              key = ingredient.type;
+                            } else {
+                              key = `${boneType} ${ingredient.type}`;
+                            }
                             mainItems[key] = (mainItems[key] || 0) + qty;
                           }
                           else if (lower.includes('wings') || lower.includes('tenders')) {
@@ -526,7 +531,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
                           <>
                             <div className="summary-category"><strong>MAIN:</strong></div>
                             {Object.entries(mainItems).map(([type, total]) => (
-                              <div key={type} className="summary-line">- {total} {type}</div>
+                              <div key={type} className="summary-line">- {total} {type.toUpperCase()}</div>
                             ))}
                             <br />
                           </>
@@ -535,7 +540,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
                           <>
                             <div className="summary-category"><strong>SIDES:</strong></div>
                             {Object.entries(sidesItems).map(([type, total]) => (
-                              <div key={type} className="summary-line">- {total} {type}</div>
+                              <div key={type} className="summary-line">- {total} {type.toUpperCase()}</div>
                             ))}
                             <br />
                           </>
@@ -544,7 +549,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
                           <>
                             <div className="summary-category"><strong>DIPPINGS:</strong></div>
                             {Object.entries(dippingsItems).map(([type, total]) => (
-                              <div key={type} className="summary-line">- {total} {type}</div>
+                              <div key={type} className="summary-line">- {total} {type.toUpperCase()}</div>
                             ))}
                             <br />
                           </>
@@ -553,7 +558,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
                           <>
                             <div className="summary-category"><strong>DRINKS:</strong></div>
                             {Object.entries(drinksItems).map(([type, total]) => (
-                              <div key={type} className="summary-line">- {total} {type}</div>
+                              <div key={type} className="summary-line">- {total} {type.toUpperCase()}</div>
                             ))}
                           </>
                         )}
@@ -591,7 +596,13 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
                           kitchen.ingredients.forEach((ingredient: any) => {
                             // If ingredient requires selection (like wings), use customer's bone type choice
                             if (ingredient.requiresSelection && boneType) {
-                              const key = `${boneType} ${ingredient.type}`;
+                              // Normalize "Original" to plain ingredient name since it's the default
+                              let key;
+                              if (boneType.toLowerCase() === 'original') {
+                                key = ingredient.type;
+                              } else {
+                                key = `${boneType} ${ingredient.type}`;
+                              }
                               ingredientTotals[key] = (ingredientTotals[key] || 0) + (ingredient.quantity * itemQty);
                             } 
                             // If ingredient is fries but customer chose a different side, use their choice
@@ -644,7 +655,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
                       <>
                         {Object.entries(ingredientTotals).map(([type, total]) => (
                           <div key={type} className="summary-line">
-                            <strong>- {total}  {type.charAt(0).toUpperCase() + type.slice(1)}</strong>
+                            <strong>- {total}  {type.toUpperCase()}</strong>
                           </div>
                         ))}
                       </>
@@ -654,7 +665,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
                 <div className="divider-line">=========</div>
                 <div className="total-summary">
                   <div>TOTAL ITEMS: {order.items?.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0)}</div>
-                  <div>TOTAL PAID:  ${(order.total || order.totalAmount || 0).toFixed(2)}</div>
+                  <div>TOTAL PAID:  RM {(order.total || order.totalAmount || 0).toFixed(2)}</div>
                 </div>
                 <div className="divider-line">=========</div>
                 <h4 className="section-title">&gt;&gt; PACKING DISTRIBUTION LIST &lt;&lt;</h4>
@@ -718,7 +729,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
               <div className="divider-line">-----------------</div>
               <div className="total-row grand-total">
                 <span className="label">TOTAL MYR</span>
-                <span className="value">${(order.total || order.totalAmount || 0).toFixed(2)}</span>
+                <span className="value">RM {(order.total || order.totalAmount || 0).toFixed(2)}</span>
               </div>
               <div className="divider-line">-----------------</div>
               {order.paymentStatus === 'paid' && (

@@ -296,10 +296,8 @@ class NotificationService {
               this.toastCallback(title, message, 'order');
             }
 
-            // Auto-print receipts for group orders
-            if (isGroupOrder) {
-              await this.autoPrintGroupOrderReceipts(change.doc.id, orderData);
-            }
+            // Auto-print receipts for ALL orders (both group and individual)
+            await this.autoPrintReceipt(change.doc.id, orderData, isGroupOrder);
 
             console.log(`New order notification: ${orderId}`);
           }
@@ -319,8 +317,8 @@ class NotificationService {
     }
   }
 
-  // Auto-print group order receipts
-  private async autoPrintGroupOrderReceipts(orderId: string, orderData: any) {
+  // Auto-print receipts for both individual and group orders
+  private async autoPrintReceipt(orderId: string, orderData: any, isGroupOrder: boolean) {
     try {
       // Check if auto-print is enabled in settings
       const settingsRef = doc(db, 'appSettings', 'adminPreferences');
@@ -334,7 +332,7 @@ class NotificationService {
         return;
       }
 
-      console.log(`Auto-print enabled. Target printer: ${printerName || 'Default'}, Thermal: ${useThermalPrinter}`);
+      console.log(`Auto-print enabled for ${isGroupOrder ? 'group' : 'individual'} order. Printer: ${printerName || 'Auto'}, Thermal: ${useThermalPrinter}`);
 
       // Use QZ Tray thermal printer if enabled
       if (useThermalPrinter) {
@@ -350,42 +348,83 @@ class NotificationService {
             createdAt: orderData.createdAt || Timestamp.now()
           };
 
+          console.log(`Attempting QZ Tray print for order ${orderId.substring(0, 8)}...`);
           const success = await thermalPrinter.printReceipt(order, {
             printerName: printerName || undefined,
             paperWidth: 80
           });
 
           if (success) {
-            console.log(`Auto-printed receipt via QZ Tray for order ${orderId}`);
+            console.log(`✓ Master receipt printed via QZ Tray for order ${orderId.substring(0, 8)}`);
+            
+            // For group orders, also print individual member receipts
+            if (isGroupOrder && orderData.members && orderData.members.length > 0) {
+              console.log(`[QZ Tray] Printing ${orderData.members.length} individual member receipts...`);
+              
+              for (let i = 0; i < orderData.members.length; i++) {
+                const member = orderData.members[i];
+                const memberData = {
+                  name: member.name,
+                  cartItems: member.cartItems || [],
+                  index: i,
+                  total: member.totalAmount || 0
+                };
+                
+                console.log(`[QZ Tray] Printing receipt for member: ${member.name}`);
+                const memberSuccess = await thermalPrinter.printReceipt(order, {
+                  printerName: printerName || undefined,
+                  paperWidth: 80
+                }, memberData);
+                
+                if (memberSuccess) {
+                  console.log(`[QZ Tray] ✓ Member receipt printed: ${member.name}`);
+                } else {
+                  console.error(`[QZ Tray] ✗ Failed to print receipt for: ${member.name}`);
+                }
+                
+                // Small delay between prints to avoid overwhelming the printer
+                if (i < orderData.members.length - 1) {
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+              }
+              
+              console.log('[QZ Tray] ✓ All receipts printed');
+            }
+            
             return;
           } else {
-            console.log('QZ Tray print failed, falling back to browser print');
+            console.log('✗ QZ Tray print failed, falling back to browser print');
           }
         } catch (error) {
-          console.error('QZ Tray not available, falling back to browser print:', error);
+          console.error('✗ QZ Tray error:', error);
+          console.log('Falling back to browser print service');
         }
       }
 
-      // Fallback to browser print service
-      const groupOrderForPrint: GroupOrderForPrint = {
-        id: orderId,
-        groupName: orderData.groupName || 'Group Order',
-        hostUserName: orderData.hostUserName || 'Host',
-        participants: (orderData.participants || []).map((p: any) => ({
-          userId: p.userId,
-          userName: p.userName,
-          items: p.items || [],
-          total: p.total || 0
-        })),
-        orderDate: orderData.createdAt?.toDate() || new Date(),
-        total: orderData.total || 0
-      };
+      // Fallback to browser print service (only for group orders)
+      if (isGroupOrder) {
+        const groupOrderForPrint: GroupOrderForPrint = {
+          id: orderId,
+          groupName: orderData.groupName || 'Group Order',
+          hostUserName: orderData.hostUserName || 'Host',
+          participants: (orderData.participants || []).map((p: any) => ({
+            userId: p.userId,
+            userName: p.userName,
+            items: p.items || [],
+            total: p.total || 0
+          })),
+          orderDate: orderData.createdAt?.toDate() || new Date(),
+          total: orderData.total || 0
+        };
 
-      await printService.printGroupOrderReceipts(groupOrderForPrint, undefined, printerName);
+        await printService.printGroupOrderReceipts(groupOrderForPrint, undefined, printerName);
+        console.log(`Auto-printed receipts for group order ${orderId.substring(0, 8)}`);
+      } else {
+        console.log(`Individual order ${orderId.substring(0, 8)}: Browser auto-print not supported for individual orders. Use QZ Tray.`);
+      }
       
-      console.log(`Auto-printed receipts for group order ${orderId}`);
     } catch (error) {
-      console.error('Error auto-printing group order receipts:', error);
+      console.error('Error auto-printing receipt:', error);
     }
   }
 
