@@ -343,7 +343,81 @@ class GroupOrderRepository(private val authRepository: IAuthRepository) {
                 }
             }
             
-            // Update Firebase
+            // Convert cart item to Firestore format
+            val cartItemData = hashMapOf<String, Any?>(
+                "id" to cartItem.id,
+                "menuItem" to hashMapOf(
+                    "id" to cartItem.menuItem.id,
+                    "name" to cartItem.menuItem.name,
+                    "description" to cartItem.menuItem.description,
+                    "price" to cartItem.menuItem.price,
+                    "category" to cartItem.menuItem.category,
+                    "imageUrl" to (cartItem.menuItem.imageUrl ?: ""),
+                    "isAvailable" to cartItem.menuItem.isAvailable,
+                    "requiresCustomization" to cartItem.menuItem.requiresCustomization
+                ),
+                "quantity" to cartItem.quantity,
+                "customization" to if (cartItem.customization != null) {
+                    try {
+                        hashMapOf<String, Any?>(
+                            "flavor" to cartItem.customization.flavor.name,
+                            "dippingSauce" to cartItem.customization.dippingSauce.name,
+                            "drink" to cartItem.customization.drink.name,
+                            "boneType" to cartItem.customization.boneType?.name,
+                            "friesExchange" to cartItem.customization.friesExchange?.let { exchange ->
+                                hashMapOf(
+                                    "name" to exchange.name,
+                                    "regularPrice" to exchange.regularPrice,
+                                    "jumboPrice" to exchange.jumboPrice,
+                                    "selectedSize" to exchange.selectedSize,
+                                    "selectedFlavor" to exchange.selectedFlavor
+                                )
+                            },
+                            "saladType" to cartItem.customization.saladType
+                        )
+                    } catch (e: Exception) {
+                        android.util.Log.e("GroupOrderRepository", "Error serializing customization: ${e.message}")
+                        null
+                    }
+                } else null,
+                "specialInstructions" to (cartItem.specialInstructions ?: ""),
+                "subtotal" to cartItem.subtotal
+            )
+            
+            // Update Firebase lobbies collection (for lobby-based orders)
+            try {
+                val lobbyDoc = firestore.collection("lobbies").document(orderId).get().await()
+                if (lobbyDoc.exists()) {
+                    @Suppress("UNCHECKED_CAST")
+                    val members = lobbyDoc.get("members") as? List<Map<String, Any>> ?: emptyList()
+                    val updatedLobbyMembers = members.map { member ->
+                        if (member["userId"] == currentUser.id) {
+                            @Suppress("UNCHECKED_CAST")
+                            val cartItems = (member["cartItems"] as? List<Any>)?.toMutableList() ?: mutableListOf()
+                            cartItems.add(cartItemData)
+                            val total = cartItems.sumOf { item ->
+                                @Suppress("UNCHECKED_CAST")
+                                ((item as? Map<String, Any>)?.get("subtotal") as? Number)?.toDouble() ?: 0.0
+                            }
+                            member.toMutableMap().apply {
+                                put("cartItems", cartItems)
+                                put("total", total)
+                            }
+                        } else {
+                            member
+                        }
+                    }
+                    
+                    firestore.collection("lobbies").document(orderId).update(
+                        mapOf("members" to updatedLobbyMembers)
+                    ).await()
+                }
+            } catch (e: Exception) {
+                // If lobby doesn't exist, that's okay - proceed with groupOrders update
+                android.util.Log.d("GroupOrderRepository", "Lobby not found or error updating: ${e.message}")
+            }
+            
+            // Update Firebase groupOrders collection (for legacy/direct group orders)
             groupOrdersCollection.document(order.code).update(
                 mapOf(
                     "members" to updatedMembers.map { member ->
@@ -360,7 +434,29 @@ class GroupOrderRepository(private val authRepository: IAuthRepository) {
                                     "quantity" to item.quantity,
                                     "price" to item.menuItem.price,
                                     "kitchenIngredients" to serializeKitchenIngredients(item.menuItem.kitchenIngredients),
-                                    "customization" to item.customization
+                                    "customization" to if (item.customization != null) {
+                                        try {
+                                            hashMapOf<String, Any?>(
+                                                "flavor" to item.customization.flavor.name,
+                                                "dippingSauce" to item.customization.dippingSauce.name,
+                                                "drink" to item.customization.drink.name,
+                                                "boneType" to item.customization.boneType?.name,
+                                                "friesExchange" to item.customization.friesExchange?.let { exchange ->
+                                                    hashMapOf(
+                                                        "name" to exchange.name,
+                                                        "regularPrice" to exchange.regularPrice,
+                                                        "jumboPrice" to exchange.jumboPrice,
+                                                        "selectedSize" to exchange.selectedSize,
+                                                        "selectedFlavor" to exchange.selectedFlavor
+                                                    )
+                                                },
+                                                "saladType" to item.customization.saladType
+                                            )
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("GroupOrderRepository", "Error serializing customization in groupOrders: ${e.message}")
+                                            null
+                                        }
+                                    } else null
                                 )
                             }
                         )
@@ -600,5 +696,10 @@ class GroupOrderRepository(private val authRepository: IAuthRepository) {
     
     fun setCurrentGroupOrder(order: GroupOrder?) {
         _currentGroupOrder.value = order
+    }
+    
+    // Add order to local cache (for lobby-based orders)
+    fun addOrderToCache(order: GroupOrder) {
+        orders[order.code] = order
     }
 }

@@ -44,84 +44,45 @@ import java.util.*
 fun GroupOrderScreen(
     authViewModel: AuthViewModel = AuthViewModel(),
     groupOrderViewModel: GroupOrderViewModel = GroupOrderViewModel(),
-    onAuthRequired: () -> Unit = {}
+    lobbyViewModel: wingzone.zenith.viewmodel.LobbyViewModel,
+    onAuthRequired: () -> Unit = {},
+    onNavigateToCreateLobby: () -> Unit = {},
+    onNavigateToJoinLobby: () -> Unit = {},
+    onNavigateToLobbyDetail: (String) -> Unit = {}
 ) {
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf("Join Lobby", "My Lobbies")
-    var showCreateDialog by remember { mutableStateOf(false) }
-    var showJoinDialog by remember { mutableStateOf(false) }
     val userGroupOrders = remember { mutableStateListOf<GroupOrder>() }
-    var currentLobbyCode by remember { mutableStateOf<String?>(null) }
+    val userLobbies = remember { mutableStateListOf<Map<String, Any>>() }
+    var refreshTrigger by remember { mutableStateOf(0) }
     
-    // Load user's group orders
-    LaunchedEffect(Unit) {
+    // Load user's lobbies from Firestore
+    LaunchedEffect(refreshTrigger) {
         if (authViewModel.isAuthenticated()) {
-            userGroupOrders.clear()
-            userGroupOrders.addAll(groupOrderViewModel.getUserGroupOrders())
-        }
-    }
-    
-    // Real-time listener for current lobby
-    LaunchedEffect(currentLobbyCode) {
-        currentLobbyCode?.let { code ->
-            groupOrderViewModel.startListeningToGroupOrder(code) { updatedOrder ->
-                if (updatedOrder != null) {
-                    val index = userGroupOrders.indexOfFirst { it.code == code }
-                    if (index >= 0) {
-                        userGroupOrders[index] = updatedOrder
-                    } else {
-                        userGroupOrders.add(updatedOrder)
-                    }
-                }
-            }
+            userLobbies.clear()
+            val lobbies = lobbyViewModel.getUserLobbies()
+            userLobbies.addAll(lobbies)
         }
     }
     
     Scaffold(
         topBar = {
-            Column {
-                TopAppBar(
-                    title = { 
-                        Text(
-                            "Group Order",
+            TopAppBar(
+                title = { 
+                    Text(
+                        "Group Orders",
+                        style = MaterialTheme.typography.titleLarge.copy(
                             fontWeight = FontWeight.Bold,
-                            color = WingZoneRed,
-                            fontSize = 24.sp
+                            color = Color.White
                         )
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.White
-                    ),
-                    modifier = Modifier.statusBarsPadding()
-                )
-                
-                // Banner
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = WingZoneRed
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.wingzone),
-                            contentDescription = "WingZone Logo",
-                            modifier = Modifier.size(40.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "Order Together, Save Together!",
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
+                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = WingZoneOrange,
+                    titleContentColor = Color.White
+                ),
+                modifier = Modifier.statusBarsPadding()
+            )
         },
         containerColor = BackgroundGray
     ) { paddingValues ->
@@ -150,129 +111,57 @@ fun GroupOrderScreen(
                 }
             }
             
-            // Content of the wingzone app
+            // Content
             when (selectedTab) {
                 0 -> JoinLobbyTab(
                     onCreateClick = {
                         if (!authViewModel.isAuthenticated()) {
                             onAuthRequired()
                         } else {
-                            showCreateDialog = true
+                            onNavigateToCreateLobby()
                         }
                     },
                     onJoinClick = {
                         if (!authViewModel.isAuthenticated()) {
                             onAuthRequired()
                         } else {
-                            showJoinDialog = true
+                            onNavigateToJoinLobby()
                         }
                     },
-                    groupOrders = userGroupOrders,
+                    lobbies = userLobbies,
                     onJoinLobby = { code ->
                         if (!authViewModel.isAuthenticated()) {
                             onAuthRequired()
                         } else {
-                            groupOrderViewModel.joinGroupOrder(code) { result ->
+                            lobbyViewModel.joinLobby(code) { result ->
                                 if (result.isSuccess) {
-                                    currentLobbyCode = code
-                                    userGroupOrders.clear()
-                                    userGroupOrders.addAll(groupOrderViewModel.getUserGroupOrders())
+                                    refreshTrigger++
                                 }
                             }
                         }
+                    },
+                    onViewLobbyDetail = { lobbyId ->
+                        onNavigateToLobbyDetail(lobbyId)
                     }
                 )
                 1 -> MyLobbiesTab(
-                    groupOrders = userGroupOrders,
+                    lobbies = userLobbies,
                     currentUserId = authViewModel.getCurrentUser()?.id ?: "",
-                    onViewDetails = { order ->
-                        groupOrderViewModel.setCurrentGroupOrder(order)
-                        // TODO: Navigate to GroupOrderDetailsScreen
-                    },
-                    onLeaveLobby = { orderId ->
-                        groupOrderViewModel.leaveGroupOrder(orderId) { result ->
-                            if (result.isSuccess) {
-                                userGroupOrders.clear()
-                                userGroupOrders.addAll(groupOrderViewModel.getUserGroupOrders())
-                            }
+                    onViewDetails = { lobby ->
+                        val lobbyId = lobby["id"] as? String
+                        if (lobbyId != null) {
+                            onNavigateToLobbyDetail(lobbyId)
                         }
                     },
-                    onCheckout = { order ->
-                        // Create ONE consolidated group order for admin
-                        val orderRepository = FirebaseOrderRepository()
-                        val allItems = order.members.flatMap { it.cartItems }
-                        
-                        if (allItems.isNotEmpty()) {
-                            CoroutineScope(Dispatchers.Main).launch {
-                                val consolidatedCart = Cart(items = allItems)
-                                
-                                // Build member details for delivery notes
-                                val memberDetails = order.members.joinToString("\n") { member ->
-                                    val itemCount = member.cartItems.sumOf { it.quantity }
-                                    val memberTotal = member.cartItems.sumOf { it.subtotal }
-                                    "${member.name}: $itemCount items (RM ${String.format("%.2f", memberTotal)})"
-                                }
-                                
-                                val result = orderRepository.createGroupOrder(
-                                    hostUserId = order.hostId,
-                                    hostUserName = order.members.first { it.userId == order.hostId }.name,
-                                    cart = consolidatedCart,
-                                    groupOrderCode = order.code,
-                                    memberCount = order.members.size,
-                                    memberDetails = memberDetails,
-                                    paymentMethod = "Group Order - Cash on Delivery",
-                                    deliveryAddress = order.deliveryAddress,
-                                    deliveryNotes = "GROUP ORDER: ${order.code}\nMembers: ${order.members.size}\n\n$memberDetails\n\n${order.specialInstructions ?: ""}",
-                                    phoneNumber = ""
-                                )
-                                
-                                if (result.isSuccess) {
-                                    groupOrderViewModel.finalizeGroupOrder(order.id) { _ ->
-                                        userGroupOrders.clear()
-                                        userGroupOrders.addAll(groupOrderViewModel.getUserGroupOrders())
-                                    }
-                                }
-                            }
-                        }
+                    onLeaveLobby = { lobbyId ->
+                        // TODO: Implement leave lobby
+                        refreshTrigger++
+                    },
+                    onRefresh = {
+                        refreshTrigger++
                     }
                 )
             }
-        }
-        
-        // Create Lobby Dialog
-        if (showCreateDialog) {
-            CreateLobbyDialog(
-                onDismiss = { showCreateDialog = false },
-                onCreate = { deliveryAddress, instructions ->
-                    groupOrderViewModel.createGroupOrder(deliveryAddress, instructions) { result ->
-                        if (result.isSuccess) {
-                            result.getOrNull()?.let { order ->
-                                currentLobbyCode = order.code
-                            }
-                            userGroupOrders.clear()
-                            userGroupOrders.addAll(groupOrderViewModel.getUserGroupOrders())
-                            showCreateDialog = false
-                        }
-                    }
-                }
-            )
-        }
-        
-        // Join Lobby Dialog
-        if (showJoinDialog) {
-            JoinLobbyDialog(
-                onDismiss = { showJoinDialog = false },
-                onJoin = { code ->
-                    groupOrderViewModel.joinGroupOrder(code) { result ->
-                        if (result.isSuccess) {
-                            currentLobbyCode = code
-                            userGroupOrders.clear()
-                            userGroupOrders.addAll(groupOrderViewModel.getUserGroupOrders())
-                            showJoinDialog = false
-                        }
-                    }
-                }
-            )
         }
     }
 }
@@ -281,108 +170,135 @@ fun GroupOrderScreen(
 fun JoinLobbyTab(
     onCreateClick: () -> Unit,
     onJoinClick: () -> Unit,
-    groupOrders: List<GroupOrder>,
-    onJoinLobby: (String) -> Unit
+    lobbies: List<Map<String, Any>>,
+    onJoinLobby: (String) -> Unit,
+    onViewLobbyDetail: (String) -> Unit = {}
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp)
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Create Lobby Card
+        // Hero Section
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = WingZoneOrange),
-                onClick = onCreateClick
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
             ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Create",
+                        imageVector = Icons.Default.Star,
+                        contentDescription = "Feature",
                         tint = Color.White,
-                        modifier = Modifier.size(40.dp)
+                        modifier = Modifier.size(48.dp)
                     )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Text(
-                            text = "Create New Lobby",
-                            color = Color.White,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Text(
+                        text = "Group Orders",
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.White
                         )
-                        Text(
-                            text = "Start a group order and invite friends",
-                            color = Color.White.copy(alpha = 0.9f),
-                            fontSize = 14.sp
-                        )
-                    }
-                }
-            }
-        }
-        
-        item { Spacer(modifier = Modifier.height(16.dp)) }
-        
-        // Join by Code Card
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                onClick = onJoinClick
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = "Join",
-                        tint = WingZoneRed,
-                        modifier = Modifier.size(40.dp)
                     )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Text(
-                            text = "Join with Code",
-                            color = DarkGray,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Enter a lobby code to join",
-                            color = TextSecondary,
-                            fontSize = 14.sp
-                        )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Text(
+                        text = "Order together and save more!",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = Color.White.copy(alpha = 0.95f),
+                            fontWeight = FontWeight.Medium
+                        ),
+                        textAlign = TextAlign.Center
+                    )
+                    
+                    Spacer(modifier = Modifier.height(20.dp))
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Button(
+                            onClick = onCreateClick,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.White,
+                                contentColor = WingZoneOrange
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Create",
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                        }
+                        
+                        OutlinedButton(
+                            onClick = onJoinClick,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = Color.White
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(2.dp, Color.White),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Join",
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                        }
                     }
                 }
             }
         }
         
         // Available Lobbies
-        if (groupOrders.isNotEmpty()) {
+        if (lobbies.isNotEmpty()) {
             item {
-                Spacer(modifier = Modifier.height(24.dp))
                 Text(
                     text = "Available Lobbies",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = DarkGray
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = DarkGray
+                    )
                 )
-                Spacer(modifier = Modifier.height(12.dp))
             }
             
-            items(groupOrders.filter { it.status == GroupOrderStatus.OPEN }) { order ->
-                LobbyCard(
-                    order = order,
-                    onClick = { onJoinLobby(order.code) }
+            items(lobbies.filter { (it["status"] as? String) == "active" }) { lobby ->
+                NewLobbyCard(
+                    lobby = lobby,
+                    onClick = { 
+                        val lobbyId = lobby["id"] as? String
+                        if (lobbyId != null) {
+                            onViewLobbyDetail(lobbyId)
+                        }
+                    }
                 )
                 Spacer(modifier = Modifier.height(12.dp))
             }
@@ -392,17 +308,17 @@ fun JoinLobbyTab(
 
 @Composable
 fun MyLobbiesTab(
-    groupOrders: List<GroupOrder>,
+    lobbies: List<Map<String, Any>>,
     currentUserId: String,
-    onViewDetails: (GroupOrder) -> Unit,
+    onViewDetails: (Map<String, Any>) -> Unit,
     onLeaveLobby: (String) -> Unit,
-    onCheckout: (GroupOrder) -> Unit = {}
+    onRefresh: () -> Unit = {}
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp)
     ) {
-        if (groupOrders.isEmpty()) {
+        if (lobbies.isEmpty()) {
             item {
                 Column(
                     modifier = Modifier
@@ -418,7 +334,7 @@ fun MyLobbiesTab(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "No Active Group Orders",
+                        text = "No Active Lobbies",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextSecondary
@@ -432,13 +348,12 @@ fun MyLobbiesTab(
                 }
             }
         } else {
-            items(groupOrders) { order ->
-                MyLobbyCard(
-                    order = order,
-                    isHost = order.hostId == currentUserId,
-                    onViewDetails = { onViewDetails(order) },
-                    onLeave = { onLeaveLobby(order.id) },
-                    onCheckout = { onCheckout(order) }
+            items(lobbies) { lobby ->
+                NewMyLobbyCard(
+                    lobby = lobby,
+                    isHost = lobby["hostUserId"] == currentUserId,
+                    onViewDetails = { onViewDetails(lobby) },
+                    onLeave = { onLeaveLobby(lobby["id"] as? String ?: "") }
                 )
                 Spacer(modifier = Modifier.height(12.dp))
             }
@@ -453,65 +368,103 @@ fun LobbyCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         onClick = onClick
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(20.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Top
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Lobby ${order.code}",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = DarkGray
-                    )
-                    Text(
-                        text = "Host: ${order.members.find { it.isHost }?.name ?: "Unknown"}",
-                        fontSize = 14.sp,
-                        color = TextSecondary
-                    )
+                    Surface(
+                        color = WingZoneOrange.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "CODE: ${order.code}",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.ExtraBold,
+                                color = WingZoneOrange,
+                                letterSpacing = 1.sp
+                            ),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Host",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = order.members.find { it.isHost }?.name ?: "Unknown",
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = DarkGray,
+                                fontWeight = FontWeight.Medium
+                            )
+                        )
+                    }
                 }
                 
                 Surface(
-                    color = WingZoneOrange.copy(alpha = 0.2f),
-                    shape = RoundedCornerShape(8.dp)
+                    color = Color(0xFF4CAF50).copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(20.dp)
                 ) {
-                    Text(
-                        text = order.status.name,
-                        color = WingZoneOrange,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF4CAF50))
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "OPEN",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = Color(0xFF4CAF50),
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                    }
                 }
             }
             
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 InfoChip(
                     icon = Icons.Default.Person,
-                    text = "${order.members.size}/${order.maxMembers}"
+                    text = "${order.members.size}/${order.maxMembers}",
+                    color = WingZoneOrange
                 )
                 InfoChip(
                     icon = Icons.Default.ShoppingCart,
-                    text = "${order.totalItems} items"
+                    text = "${order.totalItems} items",
+                    color = WingZoneRed
                 )
                 InfoChip(
                     icon = Icons.Default.Star,
-                    text = "RM ${String.format("%.2f", order.totalAmount)}"
+                    text = "RM ${String.format("%.2f", order.totalAmount)}",
+                    color = Color(0xFF4CAF50)
                 )
             }
         }
@@ -528,8 +481,9 @@ fun MyLobbyCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         onClick = onViewDetails
     ) {
         Column(
@@ -854,176 +808,271 @@ fun MyLobbyCard(
 }
 
 @Composable
-fun InfoChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .background(BackgroundGray, RoundedCornerShape(8.dp))
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+fun InfoChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String,
+    color: Color = WingZoneOrange
+) {
+    Surface(
+        color = color.copy(alpha = 0.1f),
+        shape = RoundedCornerShape(12.dp)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = WingZoneRed,
-            modifier = Modifier.size(16.dp)
-        )
-        Spacer(modifier = Modifier.width(4.dp))
-        Text(
-            text = text,
-            fontSize = 12.sp,
-            color = DarkGray,
-            fontWeight = FontWeight.Medium
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    color = color,
+                    fontWeight = FontWeight.Bold
+                )
+            )
+        }
     }
 }
 
+// New lobby card components for the lobbies collection
 @Composable
-fun CreateLobbyDialog(
-    onDismiss: () -> Unit,
-    onCreate: (String, String) -> Unit
+fun NewLobbyCard(
+    lobby: Map<String, Any>,
+    onClick: () -> Unit
 ) {
-    var deliveryAddress by remember { mutableStateOf("") }
-    var instructions by remember { mutableStateOf("") }
-    
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        onClick = onClick
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp)
+            // Lobby Code
+            Surface(
+                color = WingZoneOrange.copy(alpha = 0.15f),
+                shape = RoundedCornerShape(8.dp)
             ) {
                 Text(
-                    text = "Create Group Lobby",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = WingZoneRed
+                    text = "CODE: ${lobby["code"]}",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.ExtraBold,
+                        color = WingZoneOrange,
+                        letterSpacing = 1.sp
+                    ),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                 )
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                OutlinedTextField(
-                    value = deliveryAddress,
-                    onValueChange = { deliveryAddress = it },
-                    label = { Text("Delivery Address (Optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Host info
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Person,
+                    contentDescription = "Host",
+                    tint = TextSecondary,
+                    modifier = Modifier.size(16.dp)
                 )
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                OutlinedTextField(
-                    value = instructions,
-                    onValueChange = { instructions = it },
-                    label = { Text("Special Instructions (Optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    maxLines = 3
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = lobby["hostUserName"] as? String ?: "Unknown",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = DarkGray,
+                        fontWeight = FontWeight.Medium
+                    )
                 )
-                
-                Spacer(modifier = Modifier.height(20.dp))
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Cancel")
-                    }
-                    
-                    Button(
-                        onClick = { onCreate(deliveryAddress, instructions) },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = WingZoneRed)
-                    ) {
-                        Text("Create")
-                    }
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            // Location
+            val location = lobby["location"] as? Map<String, Any>
+            if (location != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.LocationOn,
+                        contentDescription = "Location",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = location["name"] as? String ?: "Unknown",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = TextSecondary
+                        )
+                    )
                 }
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Members count
+            val members = lobby["members"] as? List<*>
+            val memberCount = members?.size ?: 0
+            val maxMembers = (lobby["maxMembers"] as? Long)?.toInt() ?: 10
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                InfoChip(
+                    text = "$memberCount/$maxMembers Members",
+                    icon = Icons.Default.Person,
+                    color = Color(0xFF4CAF50)
+                )
+                
+                InfoChip(
+                    text = lobby["orderType"] as? String ?: "Pickup",
+                    icon = Icons.Default.ShoppingCart,
+                    color = WingZoneOrange
+                )
             }
         }
     }
 }
 
 @Composable
-fun JoinLobbyDialog(
-    onDismiss: () -> Unit,
-    onJoin: (String) -> Unit
+fun NewMyLobbyCard(
+    lobby: Map<String, Any>,
+    isHost: Boolean,
+    onViewDetails: () -> Unit,
+    onLeave: () -> Unit
 ) {
-    var code by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-    
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp)
+            // Header with code and host badge
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
             ) {
-                Text(
-                    text = "Join Group Lobby",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = WingZoneRed
-                )
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                OutlinedTextField(
-                    value = code,
-                    onValueChange = { 
-                        code = it.uppercase()
-                        error = null
-                    },
-                    label = { Text("Lobby Code") },
-                    placeholder = { Text("e.g., WZABCD") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true,
-                    isError = error != null
-                )
-                
-                if (error != null) {
+                Surface(
+                    color = WingZoneOrange.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
                     Text(
-                        text = error!!,
-                        color = Color.Red,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(top = 4.dp)
+                        text = lobby["code"] as? String ?: "",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            color = WingZoneOrange,
+                            letterSpacing = 2.sp
+                        ),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
                     )
                 }
                 
-                Spacer(modifier = Modifier.height(20.dp))
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f)
+                if (isHost) {
+                    Surface(
+                        color = WingZoneRed.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("Cancel")
+                        Text(
+                            text = "HOST",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.ExtraBold,
+                                color = WingZoneRed
+                            ),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
                     }
-                    
-                    Button(
-                        onClick = {
-                            if (code.isBlank()) {
-                                error = "Please enter a lobby code"
-                            } else {
-                                onJoin(code)
-                            }
-                        },
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Members
+            val members = lobby["members"] as? List<Map<String, Any>>
+            if (members != null && members.isNotEmpty()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = "Members",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "${members.size} members",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = DarkGray,
+                            fontWeight = FontWeight.Medium
+                        )
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Location
+            val location = lobby["location"] as? Map<String, Any>
+            if (location != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.LocationOn,
+                        contentDescription = "Location",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = location["name"] as? String ?: "Unknown",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = TextSecondary
+                        )
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Action buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onViewDetails,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("View Details")
+                }
+                
+                if (!isHost) {
+                    OutlinedButton(
+                        onClick = onLeave,
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = WingZoneRed)
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = WingZoneRed
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, WingZoneRed)
                     ) {
-                        Text("Join")
+                        Text("Leave")
                     }
                 }
             }
