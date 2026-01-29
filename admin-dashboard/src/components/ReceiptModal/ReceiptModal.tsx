@@ -15,15 +15,16 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
   const [printerStatus, setPrinterStatus] = useState<string>('');
   const [availablePrinters, setAvailablePrinters] = useState<string[]>([]);
   const [selectedPrinter, setSelectedPrinter] = useState<string>('');
+  const [isPrintingGroup, setIsPrintingGroup] = useState<boolean>(false);
 
-  const handleThermalPrint = async () => {
+  const handleThermalPrint = async (receiptContent?: string) => {
     try {
       setPrinterStatus('Connecting to QZ Tray...');
       
       const success = await thermalPrinter.printReceipt(order, {
         printerName: selectedPrinter || undefined,
         paperWidth: 80
-      });
+      }, receiptContent);
       
       if (success) {
         setPrinterStatus('✓ Print sent successfully!');
@@ -36,6 +37,62 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
       console.error('Thermal print error:', error);
       setPrinterStatus('✗ QZ Tray not available. Using browser print...');
       setTimeout(() => handleBrowserPrint(), 1000);
+    }
+  };
+
+  const handlePrintGroupReceipts = async () => {
+    if (!order.members || order.members.length === 0) {
+      setPrinterStatus('✗ No members found in group order');
+      return;
+    }
+
+    setIsPrintingGroup(true);
+    setPrinterStatus(`Printing master receipt + ${order.members.length} member receipts...`);
+
+    try {
+      // Step 1: Print master receipt (all items from all members)
+      await handleThermalPrint();
+      await new Promise(resolve => setTimeout(resolve, 1500)); // Wait between prints
+
+      // Step 2: Print individual member receipts
+      for (let i = 0; i < order.members.length; i++) {
+        const member = order.members[i];
+        setPrinterStatus(`Printing receipt ${i + 1}/${order.members.length} for ${member.name || member.userName}...`);
+        
+        // Create individual member order object
+        const memberOrder = {
+          ...order,
+          userName: member.name || member.userName,
+          userId: member.userId,
+          items: member.cartItems || [],
+          total: (member.cartItems || []).reduce((sum: number, item: any) => sum + (item.subtotal || 0), 0),
+          subtotal: (member.cartItems || []).reduce((sum: number, item: any) => sum + (item.subtotal || 0), 0),
+          isMemberReceipt: true,
+          memberIndex: i + 1,
+          totalMembers: order.members.length,
+          isHost: member.userId === order.hostId || member.isHost
+        };
+
+        await thermalPrinter.printReceipt(memberOrder, {
+          printerName: selectedPrinter || undefined,
+          paperWidth: 80
+        });
+
+        // Wait between member receipts
+        if (i < order.members.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        }
+      }
+
+      setPrinterStatus(`✓ Successfully printed ${order.members.length + 1} receipts!`);
+      setTimeout(() => {
+        setPrinterStatus('');
+        setIsPrintingGroup(false);
+      }, 3000);
+    } catch (error) {
+      console.error('Group print error:', error);
+      setPrinterStatus('✗ Error printing group receipts');
+      setIsPrintingGroup(false);
     }
   };
 
@@ -315,29 +372,44 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
       </ModalHeader>
       <ModalBody>
         <div className="receipt-container" id="receipt-print">
-          {/* Header */}
+          {/* Header with Logo */}
           <div className="receipt-header">
+            <img src="/WingzoneLogo.png" alt="Wingzone Logo" style={{maxWidth: '200px', margin: '10px auto', display: 'block'}} />
+            <h1 style={{fontSize: '24px', fontWeight: '900', letterSpacing: '8px', textAlign: 'center', margin: '10px 0'}}>W I N G Z O N E</h1>
             <div className="divider-line">========================================</div>
             <div className="order-type-banner">
-              {order.lobbyId ? '** GROUP LOBBY **' : order.orderType === 'dine-in' ? '** DINE-IN **' : '** CARRY-OUT **'}
+              {order.isMemberReceipt 
+                ? `MEMBER RECEIPT ${order.isHost ? '(HOST)' : ''}`
+                : order.lobbyId || order.isGroupOrder || order.members
+                ? 'MASTER GROUP RECEIPT'
+                : order.orderType === 'dine-in' 
+                ? 'DINE-IN' 
+                : 'PICKUP'}
             </div>
+            <div className="divider-line">========================================</div>
             {order.tableNumber && (
               <div className="table-info">TABLE: {order.tableNumber}</div>
             )}
-            {order.lobbyId && (
+            {(order.lobbyId || order.isGroupOrder || order.members) && !order.isMemberReceipt && (
               <>
-                <div className="lobby-info">LOBBY ID: #{order.code}</div>
-                <div className="host-info">HOST: {order.hostUserName}</div>
+                <div className="lobby-info">GROUP CODE: #{order.code || order.groupOrderCode}</div>
+                <div className="host-info">HOST: {order.hostUserName || order.userName}</div>
+                <div className="host-info">MEMBERS: {order.members?.length || order.memberCount || 0}</div>
               </>
             )}
-            {!order.lobbyId && order.userName && order.orderType === 'carry-out' && (
+            {order.isMemberReceipt && (
+              <>
+                <div className="lobby-info">GROUP CODE: #{order.code || order.groupOrderCode}</div>
+                <div className="customer-info">MEMBER: {order.userName} {order.isHost ? '(HOST)' : ''}</div>
+                <div className="customer-info">RECEIPT {order.memberIndex}/{order.totalMembers}</div>
+              </>
+            )}
+            {!order.lobbyId && !order.isGroupOrder && !order.members && order.userName && order.orderType === 'carry-out' && (
               <div className="customer-info">CUST: {order.userName}</div>
             )}
-            <div className="divider-line">========================================</div>
-            <h2 className="restaurant-name">Zenith Certification Sdn Bhd</h2>
-            <p className="reg-number">Reg: 199401032195 (317877-X)</p>
-            <p className="restaurant-address">Lebuh Meru Raya,</p>
-            <p className="restaurant-address">Bandar Meru Raya, Ipoh</p>
+            {order.deliveryAddress && (
+              <div className="customer-info">DELIVERY TO: {order.deliveryAddress}</div>
+            )}
           </div>
 
           <div className="receipt-divider"></div>
@@ -351,7 +423,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
             <div className="order-id-row">
               <span>Ord#: {order.id?.substring(0, 8).toUpperCase()}</span>
             </div>
-            {order.lobbyId && (
+            {(order.lobbyId || order.isGroupOrder || order.members) && (
               <div className="status-row">
                 <span>Status: PAID (Online Gateway)</span>
               </div>
@@ -363,10 +435,10 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
           {/* Items */}
           <div className="receipt-section items-section">
             <div className="divider-line">----------------------------------------</div>
-            {order.lobbyId ? (
+            {(order.lobbyId || order.isGroupOrder || order.members) && !order.isMemberReceipt ? (
               <>
-                <h4 className="section-title">&gt;&gt; KITCHEN PRODUCTION SUMMARY &lt;&lt;</h4>
-                <p className="section-subtitle">(Cook these items together)</p>
+                <h4 className="section-title">&gt;&gt; MASTER ORDER - ALL ITEMS &lt;&lt;</h4>
+                <p className="section-subtitle">(All members' items combined)</p>
               </>
             ) : (
               <div className="items-header">
@@ -376,13 +448,38 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
               </div>
             )}
             <div className="divider-line">----------------------------------------</div>
-            {order.items?.map((item: any, index: number) => (
-              <div key={index} className="receipt-item">
-                <div className="item-row">
-                  <span className="qty">{item.quantity || 1}</span>
-                  <span className="name">{item.menuItem?.name || item.menuItemName || item.name || 'ITEM'}{(item.menuItem?.price === 0 || item.price === 0) ? ' (COMBO)' : ''}</span>
-                  <span className="price">{((item.menuItem?.price || item.price || 0) * (item.quantity || 1)).toFixed(2)}</span>
-                </div>
+            {(() => {
+              // For group orders, extract all items from members
+              let itemsToShow = order.items || [];
+              
+              if ((order.lobbyId || order.isGroupOrder || order.members) && !order.isMemberReceipt && order.members) {
+                itemsToShow = [];
+                order.members.forEach((member: any) => {
+                  (member.cartItems || []).forEach((item: any) => {
+                    itemsToShow.push({
+                      ...item,
+                      memberName: member.name || member.userName,
+                      isHost: member.userId === order.hostId || member.isHost
+                    });
+                  });
+                });
+              }
+
+              return itemsToShow.map((item: any, index: number) => (
+                <div key={index} className="receipt-item">
+                  <div className="item-row">
+                    <span className="qty">{item.quantity || 1}</span>
+                    <span className="name">
+                      {item.menuItem?.name || item.menuItemName || item.name || 'ITEM'}
+                      {(item.menuItem?.price === 0 || item.price === 0) ? ' (COMBO)' : ''}
+                      {item.memberName && !order.isMemberReceipt && (
+                        <span style={{ fontSize: '0.85em', fontWeight: 'normal' }}>
+                          {' '}[{item.memberName}{item.isHost ? ' - HOST' : ''}]
+                        </span>
+                      )}
+                    </span>
+                    <span className="price">{((item.menuItem?.price || item.price || 0) * (item.quantity || 1)).toFixed(2)}</span>
+                  </div>
                 {item.customization && (
                   <div className="modifiers">
                     {/* Show entree details if present */}
@@ -393,7 +490,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
                             <div><strong>&gt; Entree {eIdx + 1}: {entree.name || 'Wings'}</strong></div>
                             {entree.boneType && <div className="ms-2">&bull; {entree.boneType}</div>}
                             {entree.flavor && <div className="ms-2">&bull; <strong>Flavor: {entree.flavor}</strong></div>}
-                            {entree.dippingSauce && <div className="ms-2 highlight-dip">&bull; <strong>*** DIP: {entree.dippingSauce.toUpperCase()} ***</strong></div>}
+                            {entree.dippingSauce && <div className="ms-2 highlight-dip">&bull; <strong>DIP: {entree.dippingSauce.toUpperCase()}</strong></div>}
                             {entree.friesExchange && <div className="ms-2">&bull; Side: {entree.friesExchange.name}</div>}
                           </div>
                         ))}
@@ -402,7 +499,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
                     {/* Show single item customization */}
                     {item.customization.boneType && <div>&gt; {item.customization.boneType}</div>}
                     {item.customization.flavor && <div>&gt; <strong>Flavor: {item.customization.flavor}</strong></div>}
-                    {item.customization.dippingSauce && <div className="highlight-dip">&gt; <strong>*** DIP: {item.customization.dippingSauce.toUpperCase()} ***</strong></div>}
+                    {item.customization.dippingSauce && <div className="highlight-dip">&gt; <strong>DIP: {item.customization.dippingSauce.toUpperCase()}</strong></div>}
                     {item.customization.sideDish && <div>&gt; Side: {item.customization.sideDish}</div>}
                     {item.customization.saladType && <div>&gt; Salad: {item.customization.saladType}</div>}
                     {item.customization.friesExchange && (
@@ -427,22 +524,26 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
                   </div>
                 )}
               </div>
-            ))}
+              ));
+            })()}
             
-            {/* Kitchen Summary for Individual Orders */}
-            {!order.lobbyId && order.items && (
+            {/* Kitchen Summary for Individual Orders and Member Receipts */}
+            {((!order.lobbyId && !order.isGroupOrder && !order.members) || order.isMemberReceipt) && (
               <>
                 <div className="divider-line">========================================</div>
                 <h4 className="section-title">&gt;&gt; SUMMARY &lt;&lt;</h4>
                 <div className="kitchen-summary">
                   {(() => {
+                    // Use order.items for summary
+                    const itemsForSummary = order.items || [];
+                    
                     // Categorized ingredient totals
                     const mainItems: Record<string, number> = {};
                     const sidesItems: Record<string, number> = {};
                     const dippingsItems: Record<string, number> = {};
                     const drinksItems: Record<string, number> = {};
                     
-                    order.items.forEach((item: any) => {
+                    itemsForSummary.forEach((item: any) => {
                       const itemQty = item.quantity || 1;
                       const kitchen = item.menuItem?.kitchenIngredients || item.kitchenIngredients;
                       const boneType = item.customization?.boneType;
@@ -470,7 +571,8 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
                             }
                             mainItems[key] = (mainItems[key] || 0) + qty;
                           }
-                          else if (lower.includes('wings') || lower.includes('tenders')) {
+                        else if (lower.includes('wings') || lower.includes('tenders') || 
+                                 (lower.includes('boneless') && !lower.includes('rice') && !lower.includes('veggie'))) {
                             mainItems[key] = (mainItems[key] || 0) + qty;
                           }
                           // Sides (fries, salad, chips, rice, etc.)
@@ -571,107 +673,181 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
             )}
             
             {/* Group Order Packing List - ENHANCED with more details */}
-            {order.lobbyId && order.members && (
+            {((order.lobbyId || order.isGroupOrder || order.members) && !order.isMemberReceipt && order.members) && (
               <>
                 <div className="divider-line">========================================</div>
                 {/* Kitchen Summary for Group Orders */}
-                <h4 className="section-title">&gt;&gt; SUMMARY &lt;&lt;</h4>
+                <h4 className="section-title">&gt;&gt; KITCHEN SUMMARY &lt;&lt;</h4>
                 <div className="kitchen-summary">
                   {(() => {
-                    // Aggregate raw materials using flexible ingredient tags across all members
-                    const ingredientTotals: Record<string, number> = {};
-                    
+                    // Collect all cart items from all members
+                    const allMemberItems: any[] = [];
                     order.members.forEach((member: any) => {
-                      member.cartItems?.forEach((item: any) => {
-                        const itemQty = item.quantity || 1;
-                        const kitchen = item.menuItem?.kitchenIngredients || item.kitchenIngredients;
-                        const boneType = item.customization?.boneType; // Get customer's selection
-                        const friesExchange = item.customization?.friesExchange; // Get side substitution
-                        const saladType = item.customization?.saladType; // Get salad choice
-                        
-                        let friesReplaced = false;
-                        let saladReplaced = false;
-                        
-                        if (kitchen?.ingredients) {
-                          kitchen.ingredients.forEach((ingredient: any) => {
-                            // If ingredient requires selection (like wings), use customer's bone type choice
-                            if (ingredient.requiresSelection && boneType) {
-                              // Normalize "Original" to plain ingredient name since it's the default
-                              let key;
-                              if (boneType.toLowerCase() === 'original') {
-                                key = ingredient.type;
-                              } else {
-                                key = `${boneType} ${ingredient.type}`;
-                              }
-                              ingredientTotals[key] = (ingredientTotals[key] || 0) + (ingredient.quantity * itemQty);
-                            } 
-                            // If ingredient is fries but customer chose a different side, use their choice
-                            else if (ingredient.type.toLowerCase().includes('fries') && friesExchange) {
-                              let key = friesExchange.name;
-                              // Add size designation if jumbo
-                              if (friesExchange.selectedSize === 'jumbo') {
-                                key += ' (Jumbo)';
-                              }
-                              // Add flavor for Flavor Rub Fries
-                              if (friesExchange.selectedFlavor) {
-                                key += ` - ${friesExchange.selectedFlavor}`;
-                              }
-                              ingredientTotals[key] = (ingredientTotals[key] || 0) + (ingredient.quantity * itemQty);
+                      if (member.cartItems) {
+                        allMemberItems.push(...member.cartItems);
+                      }
+                    });
+
+                    // Generate categorized summary using the same logic as thermal printer
+                    const mainItems: Record<string, number> = {};
+                    const sidesItems: Record<string, number> = {};
+                    const dippingsItems: Record<string, number> = {};
+                    const drinksItems: Record<string, number> = {};
+
+                    allMemberItems.forEach((item: any) => {
+                      const itemQty = item.quantity || 1;
+                      const kitchen = item.menuItem?.kitchenIngredients || item.kitchenIngredients;
+                      const boneType = item.customization?.boneType;
+                      const friesExchange = item.customization?.friesExchange;
+                      const saladType = item.customization?.saladType;
+
+                      let friesReplaced = false;
+                      let saladReplaced = false;
+
+                      if (kitchen?.ingredients) {
+                        kitchen.ingredients.forEach((ingredient: any) => {
+                          const qty = ingredient.quantity * itemQty;
+                          let key = ingredient.type;
+                          const lower = key.toLowerCase();
+
+                          // Handle requiresSelection (wings, tenders)
+                          if (ingredient.requiresSelection && boneType) {
+                            if (boneType.toLowerCase() !== 'original') {
+                              key = `${boneType} ${key}`;
+                            }
+                            mainItems[key] = (mainItems[key] || 0) + qty;
+                          }
+                          // Main items: wings, tenders, boneless (NOT rice/veggie combos)
+                          else if (lower.includes('wings') || lower.includes('tenders') || 
+                                   (lower.includes('boneless') && !lower.includes('rice') && !lower.includes('veggie'))) {
+                            mainItems[key] = (mainItems[key] || 0) + qty;
+                          }
+                          // Sides - Fries
+                          else if (lower.includes('fries')) {
+                            if (friesExchange) {
+                              key = friesExchange.name;
+                              if (friesExchange.selectedSize === 'jumbo') key += ' (Jumbo)';
+                              if (friesExchange.selectedFlavor) key += ` - ${friesExchange.selectedFlavor}`;
                               friesReplaced = true;
                             }
-                            // If ingredient is salad and customer chose a salad type, use their choice
-                            else if (ingredient.type.toLowerCase().includes('salad') && saladType) {
-                              ingredientTotals[saladType] = (ingredientTotals[saladType] || 0) + (ingredient.quantity * itemQty);
+                            sidesItems[key] = (sidesItems[key] || 0) + qty;
+                          }
+                          // Sides - Salad
+                          else if (lower.includes('salad')) {
+                            if (saladType) {
+                              key = saladType;
                               saladReplaced = true;
                             }
-                            else {
-                              // For non-selectable ingredients, just use the type
-                              const key = ingredient.type;
-                              ingredientTotals[key] = (ingredientTotals[key] || 0) + (ingredient.quantity * itemQty);
-                            }
-                          });
-                        }
-                        
-                        // If customer chose a side but there was no fries ingredient to replace, add it anyway
-                        if (friesExchange && !friesReplaced) {
-                          let key = friesExchange.name;
-                          if (friesExchange.selectedSize === 'jumbo') {
-                            key += ' (Jumbo)';
+                            sidesItems[key] = (sidesItems[key] || 0) + qty;
                           }
-                          if (friesExchange.selectedFlavor) {
-                            key += ` - ${friesExchange.selectedFlavor}`;
+                          // Sides - Other sides
+                          else if (lower.includes('rice') || lower.includes('veggie') || lower.includes('beef') ||
+                                   lower.includes('chips') || lower.includes('chip') || 
+                                   lower.includes('stix') || lower.includes('mozzarella')) {
+                            sidesItems[key] = (sidesItems[key] || 0) + qty;
                           }
-                          ingredientTotals[key] = (ingredientTotals[key] || 0) + itemQty;
-                        }
-                        
-                        // If customer chose a salad but there was no salad ingredient to replace, add it anyway
-                        if (saladType && !saladReplaced) {
-                          ingredientTotals[saladType] = (ingredientTotals[saladType] || 0) + itemQty;
-                        }
-                      });
+                          // Dippings/Sauces
+                          else if (lower.includes('dipping') || lower.includes('sauce') || 
+                                   lower.includes('ranch') || lower.includes('bleu') || 
+                                   lower.includes('dressing')) {
+                            dippingsItems[key] = (dippingsItems[key] || 0) + qty;
+                          }
+                          // Drinks
+                          else if (lower.includes('drink') || lower.includes('beverage') || 
+                                   lower.includes('soda') || lower.includes('tea') || lower.includes('lemonade')) {
+                            drinksItems[key] = (drinksItems[key] || 0) + qty;
+                          }
+                          // Default to main
+                          else {
+                            mainItems[key] = (mainItems[key] || 0) + qty;
+                          }
+                        });
+                      }
+
+                      // Add fries exchange if not replaced
+                      if (friesExchange && !friesReplaced) {
+                        let key = friesExchange.name;
+                        if (friesExchange.selectedSize === 'jumbo') key += ' (Jumbo)';
+                        if (friesExchange.selectedFlavor) key += ` - ${friesExchange.selectedFlavor}`;
+                        sidesItems[key] = (sidesItems[key] || 0) + itemQty;
+                      }
+
+                      // Add salad if not replaced
+                      if (saladType && !saladReplaced) {
+                        sidesItems[saladType] = (sidesItems[saladType] || 0) + itemQty;
+                      }
                     });
                     
                     return (
                       <>
-                        {Object.entries(ingredientTotals).map(([type, total]) => (
-                          <div key={type} className="summary-line">
-                            <strong>- {total}  {type.toUpperCase()}</strong>
-                          </div>
-                        ))}
+                        {/* MAIN items */}
+                        {Object.keys(mainItems).length > 0 && (
+                          <>
+                            <div className="summary-category"><strong>MAIN:</strong></div>
+                            {Object.entries(mainItems).map(([type, total]) => (
+                              <div key={type} className="summary-line">
+                                <strong>  {total} {type.toUpperCase()}</strong>
+                              </div>
+                            ))}
+                          </>
+                        )}
+
+                        {/* SIDES items */}
+                        {Object.keys(sidesItems).length > 0 && (
+                          <>
+                            <div className="summary-category"><strong>SIDES:</strong></div>
+                            {Object.entries(sidesItems).map(([type, total]) => (
+                              <div key={type} className="summary-line">
+                                <strong>  {total} {type.toUpperCase()}</strong>
+                              </div>
+                            ))}
+                          </>
+                        )}
+
+                        {/* DIPPINGS items */}
+                        {Object.keys(dippingsItems).length > 0 && (
+                          <>
+                            <div className="summary-category"><strong>DIPPINGS:</strong></div>
+                            {Object.entries(dippingsItems).map(([type, total]) => (
+                              <div key={type} className="summary-line">
+                                <strong>  {total} {type.toUpperCase()}</strong>
+                              </div>
+                            ))}
+                          </>
+                        )}
+
+                        {/* DRINKS items */}
+                        {Object.keys(drinksItems).length > 0 && (
+                          <>
+                            <div className="summary-category"><strong>DRINKS:</strong></div>
+                            {Object.entries(drinksItems).map(([type, total]) => (
+                              <div key={type} className="summary-line">
+                                <strong>  {total} {type.toUpperCase()}</strong>
+                              </div>
+                            ))}
+                          </>
+                        )}
                       </>
                     );
                   })()}
                 </div>
                 <div className="divider-line">=========</div>
                 <div className="total-summary">
-                  <div>TOTAL ITEMS: {order.items?.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0)}</div>
+                  <div>TOTAL ITEMS: {order.members.reduce((sum: number, m: any) => {
+                    return sum + (m.cartItems || []).reduce((itemSum: number, item: any) => itemSum + (item.quantity || 1), 0);
+                  }, 0)}</div>
                   <div>TOTAL PAID:  RM {(order.total || order.totalAmount || 0).toFixed(2)}</div>
                 </div>
                 <div className="divider-line">=========</div>
                 <h4 className="section-title">&gt;&gt; PACKING DISTRIBUTION LIST &lt;&lt;</h4>
-                {order.members.map((member: any, index: number) => (
+                {order.members.map((member: any, index: number) => {
+                  const isHost = member.userId === order.hostId || member.isHost;
+                  return (
                   <div key={index} className="packing-box">
-                    <div className="box-header">[BOX {index + 1}] - {member.name.toUpperCase()}</div>
+                    <div className="box-header">
+                      [BOX {index + 1}] - {(member.name || member.userName || 'Member').toUpperCase()}
+                      {isHost && ' (HOST)'}
+                    </div>
                     {member.cartItems?.map((item: any, itemIndex: number) => (
                       <div key={itemIndex} className="box-item">
                         <div><strong>{item.quantity}x {item.menuItemName}</strong></div>
@@ -685,7 +861,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
                                     <div>&bull; <strong>Entree {eIdx + 1}: {entree.name || 'Wings'}</strong></div>
                                     {entree.boneType && <div className="ms-2">  - {entree.boneType}</div>}
                                     {entree.flavor && <div className="ms-2">  - <strong>Flavor: {entree.flavor}</strong></div>}
-                                    {entree.dippingSauce && <div className="ms-2 highlight-dip">  - <strong>*** DIP: {entree.dippingSauce.toUpperCase()} ***</strong></div>}
+                                    {entree.dippingSauce && <div className="ms-2 highlight-dip">  - <strong>DIP: {entree.dippingSauce.toUpperCase()}</strong></div>}
                                     {entree.friesExchange && <div className="ms-2">  - Side: {entree.friesExchange.name}</div>}
                                   </div>
                                 ))}
@@ -694,7 +870,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
                             {/* Show single item customization */}
                             {item.customization.boneType && <div>&bull; {item.customization.boneType}</div>}
                             {item.customization.flavor && <div>&bull; <strong>Flavor: {item.customization.flavor}</strong></div>}
-                            {item.customization.dippingSauce && <div className="highlight-dip">&bull; <strong>*** DIP: {item.customization.dippingSauce.toUpperCase()} ***</strong></div>}
+                            {item.customization.dippingSauce && <div className="highlight-dip">&bull; <strong>DIP: {item.customization.dippingSauce.toUpperCase()}</strong></div>}
                             {item.customization.sideDish && <div>&bull; Side: {item.customization.sideDish}</div>}
                             {item.customization.friesExchange && <div>&bull; Side: {item.customization.friesExchange.name}</div>}
                             {item.customization.drink && item.customization.drink.displayName && (
@@ -705,15 +881,16 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
                       </div>
                     ))}
                   </div>
-                ))}
+                );
+                })}
               </>
             )}
           </div>
 
           <div className="receipt-divider"></div>
 
-          {/* Totals */}
-          {!order.lobbyId && (
+          {/* Totals - Show for individual orders and member receipts */}
+          {((!order.lobbyId && !order.isGroupOrder && !order.members) || order.isMemberReceipt) && (
             <div className="receipt-section totals-section">
               <div className="divider-line">-----------------</div>
               <div className="total-row">
@@ -756,20 +933,17 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
 
           {/* Footer */}
           <div className="receipt-footer">
+            <div className="divider-line">========================================</div>
+            <h2 className="restaurant-name">Zenith Certification Sdn Bhd</h2>
+            <p className="reg-number">Reg: 199401032195 (317877-X)</p>
+            <p className="restaurant-address">Lebuh Meru Raya, Bandar Meru Raya</p>
+            <p className="restaurant-address">Ipoh, Perak</p>
+            <br />
             {order.lobbyId && order.authCode && (
-              <div className="auth-section">
-                <div className="divider-line">========================================</div>
-                <div className="auth-code">AUTH CODE: {order.authCode}</div>
-                <div className="divider-line">========================================</div>
-              </div>
+              <div className="auth-code" style={{fontWeight: '900', fontSize: '16px'}}>AUTH CODE: {order.authCode}</div>
             )}
-            {!order.lobbyId && (
-              <>
-                <p className="wifi-info">Wifi: wingzone123</p>
-                <p className="social-info">IG/FB: Wing Zone Malaysia</p>
-                <div className="divider-line">========================================</div>
-              </>
-            )}
+            <p className="wifi-info">Wifi: wingzone123</p>
+            <p className="social-info">IG/FB: Wing Zone Malaysia</p>
           </div>
         </div>
 
@@ -830,11 +1004,37 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
           </div>
           
           <div className="d-flex gap-2">
-            <Button color="success" size="lg" onClick={handlePrint} className="flex-fill">
-              <i className="bi bi-printer me-2"></i>
-              Print Receipt
-            </Button>
-            <Button color="secondary" size="lg" onClick={toggle} outline>
+            {order.members && order.members.length > 0 ? (
+              <>
+                <Button 
+                  color="success" 
+                  size="lg" 
+                  onClick={handlePrintGroupReceipts} 
+                  className="flex-fill"
+                  disabled={isPrintingGroup}
+                >
+                  <i className="bi bi-printer-fill me-2"></i>
+                  {isPrintingGroup ? 'Printing...' : `Print Master + ${order.members.length} Member Receipts`}
+                </Button>
+                <Button 
+                  color="info" 
+                  size="lg" 
+                  onClick={handlePrint} 
+                  className="flex-fill"
+                  outline
+                  disabled={isPrintingGroup}
+                >
+                  <i className="bi bi-printer me-2"></i>
+                  Master Only
+                </Button>
+              </>
+            ) : (
+              <Button color="success" size="lg" onClick={handlePrint} className="flex-fill">
+                <i className="bi bi-printer me-2"></i>
+                Print Receipt
+              </Button>
+            )}
+            <Button color="secondary" size="lg" onClick={toggle} outline disabled={isPrintingGroup}>
               Close
             </Button>
           </div>

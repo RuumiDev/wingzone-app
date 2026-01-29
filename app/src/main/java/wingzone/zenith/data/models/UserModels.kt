@@ -47,7 +47,10 @@ data class GroupOrder(
     val createdAt: Date = Date(),
     val expiresAt: Date,
     val deliveryAddress: String? = null,
-    val specialInstructions: String? = null
+    val specialInstructions: String? = null,
+    val orderType: String? = null,
+    val location: String? = null,
+    val paymentMethod: String? = null
 ) {
     val totalAmount: Double
         get() = members.sumOf { it.memberTotal }

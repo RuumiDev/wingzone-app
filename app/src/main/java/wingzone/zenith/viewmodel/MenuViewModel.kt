@@ -99,11 +99,6 @@ class MenuViewModel : ViewModel() {
                 .thenBy { it.name }
         )
         
-        // Filter beverages based on availability
-        val availableBeverages = (groupedItems["Beverages"] ?: emptyList()).filter { beverage ->
-            availabilitySettings.beverages.contains(beverage.name)
-        }
-        
         val categories = listOf(
             MenuCategory("combos", "Combo Meals", Icons.Default.Star, sortedComboMeals),
             MenuCategory("wings", "Wings", Icons.Default.ShoppingCart, sortedWings),
@@ -112,7 +107,7 @@ class MenuViewModel : ViewModel() {
             MenuCategory("local", "Local Favorites", Icons.Default.Home, groupedItems["Local Favorites"] ?: emptyList()),
             MenuCategory("salads", "Salads", Icons.Default.ShoppingCart, groupedItems["Salads"] ?: emptyList()),
             MenuCategory("sides", "Sides", Icons.Default.ShoppingCart, groupedItems["Sides"] ?: emptyList()),
-            MenuCategory("beverages", "Beverages", Icons.Default.ShoppingCart, availableBeverages)
+            MenuCategory("beverages", "Beverages", Icons.Default.ShoppingCart, groupedItems["Beverages"] ?: emptyList())
         ).filter { it.items.isNotEmpty() } // Only show categories with items
         
         _menuState.value = MenuState.Success(categories)

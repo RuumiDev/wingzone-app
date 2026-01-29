@@ -137,10 +137,7 @@ fun AccountScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
                 
-                // Balance Card
-                BalanceCard(currentUser!!)
-                
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 
                 // Place an Order Section
                 SectionHeader("Place an Order")
@@ -154,25 +151,16 @@ fun AccountScreen(
                     title = "Order History",
                     onClick = onNavigateToOrderHistory
                 )
-                MenuItemCard(
-                    icon = Icons.Default.Star,
-                    title = "Missions & Rewards",
-                    onClick = { /* Navigate to missions */ }
-                )
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
-                // Especially For You Section
-                SectionHeader("Especially For You")
-                MenuItemCard(
-                    icon = Icons.Default.ShoppingCart,
-                    title = "My Vouchers",
-                    onClick = { /* Navigate to vouchers */ }
-                )
+                // Feedback Section
+                SectionHeader("Feedback")
                 MenuItemCard(
                     icon = Icons.Default.Star,
-                    title = "Refer & Earn",
-                    onClick = { /* Navigate to referral */ }
+                    title = "Ratings & Reviews",
+                    subtitle = "Share your experience",
+                    onClick = { /* Navigate to ratings */ }
                 )
                 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -592,6 +580,7 @@ fun SectionHeader(title: String) {
 fun MenuItemCard(
     icon: ImageVector,
     title: String,
+    subtitle: String? = null,
     onClick: () -> Unit
 ) {
     Surface(
@@ -619,11 +608,21 @@ fun MenuItemCard(
                     modifier = Modifier.size(24.dp)
                 )
                 Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = title,
-                    fontSize = 16.sp,
-                    color = TextPrimary
-                )
+                Column {
+                    Text(
+                        text = title,
+                        fontSize = 16.sp,
+                        color = TextPrimary
+                    )
+                    if (subtitle != null) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = subtitle,
+                            fontSize = 13.sp,
+                            color = TextSecondary
+                        )
+                    }
+                }
             }
             Icon(
                 imageVector = Icons.Default.KeyboardArrowDown,

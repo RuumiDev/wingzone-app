@@ -103,6 +103,10 @@ class GroupOrderViewModel(
         groupOrderRepository.setCurrentGroupOrder(order)
     }
     
+    fun clearCurrentGroupOrder() {
+        groupOrderRepository.setCurrentGroupOrder(null)
+    }
+    
     fun generateOrderCode(): String {
         return groupOrderRepository.generateOrderCode()
     }

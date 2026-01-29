@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import wingzone.zenith.data.models.MenuItem
+import wingzone.zenith.ui.components.SimpleItemBottomSheet
 import wingzone.zenith.ui.theme.*
 import wingzone.zenith.viewmodel.AuthViewModel
 import wingzone.zenith.viewmodel.CartViewModel
@@ -31,6 +32,7 @@ import wingzone.zenith.viewmodel.MenuViewModel
 import wingzone.zenith.viewmodel.MenuState
 import wingzone.zenith.viewmodel.MenuCategory
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,6 +41,7 @@ fun MenuScreenGrid(
     cartViewModel: CartViewModel = CartViewModel(),
     authViewModel: AuthViewModel = AuthViewModel(),
     groupOrderViewModel: wingzone.zenith.viewmodel.GroupOrderViewModel = wingzone.zenith.viewmodel.GroupOrderViewModel(),
+    lobbyViewModel: wingzone.zenith.viewmodel.LobbyViewModel? = null,
     onAuthRequired: () -> Unit = {},
     onNavigateToCart: () -> Unit = {}
 ) {
@@ -46,12 +49,39 @@ fun MenuScreenGrid(
     val cart by cartViewModel.cart.collectAsState()
     val currentUser by authViewModel.currentUser.collectAsState()
     val currentGroupOrder by groupOrderViewModel.currentGroupOrder.collectAsState()
+    val currentLobbyId by (lobbyViewModel?.currentLobbyId ?: kotlinx.coroutines.flow.MutableStateFlow(null)).collectAsState()
     val isAuthenticated = currentUser != null
     
     var selectedMenuItem by remember { mutableStateOf<MenuItem?>(null) }
     var showCustomizationDialog by remember { mutableStateOf(false) }
+    var showSimpleItemSheet by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    var userHasPaid by remember { mutableStateOf(false) }
+    
+    // Check if user has paid in lobby
+    LaunchedEffect(currentLobbyId, currentUser?.id) {
+        if (currentLobbyId != null && currentUser?.id != null) {
+            try {
+                val lobbyDoc = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    .collection("lobbies")
+                    .document(currentLobbyId!!)
+                    .get()
+                    .await()
+                
+                if (lobbyDoc.exists()) {
+                    @Suppress("UNCHECKED_CAST")
+                    val members = lobbyDoc.get("members") as? List<Map<String, Any>> ?: emptyList()
+                    val currentMember = members.find { it["userId"] == currentUser?.id }
+                    userHasPaid = currentMember?.get("hasPaid") as? Boolean ?: false
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        } else {
+            userHasPaid = false
+        }
+    }
     
     Scaffold(
         topBar = {
@@ -200,21 +230,8 @@ fun MenuScreenGrid(
                                                 if (items[itemIndex].requiresCustomization) {
                                                     showCustomizationDialog = true
                                                 } else {
-                                                    // Non-customizable item - add directly
-                                                    if (currentGroupOrder != null) {
-                                                        // Add to group lobby
-                                                        val cartItem = wingzone.zenith.data.models.CartItem(
-                                                            menuItem = items[itemIndex],
-                                                            quantity = 1,
-                                                            customization = null
-                                                        )
-                                                        groupOrderViewModel.addItemToGroupOrder(currentGroupOrder!!.id, cartItem) { result ->
-                                                            // Handle result if needed
-                                                        }
-                                                    } else {
-                                                        // Add to individual cart
-                                                        cartViewModel.addItem(items[itemIndex], 1)
-                                                    }
+                                                    // Show confirmation sheet for simple items
+                                                    showSimpleItemSheet = true
                                                 }
                                             }
                                         )
@@ -232,6 +249,36 @@ fun MenuScreenGrid(
         }
     }
     
+    // Simple Item Bottom Sheet
+    if (showSimpleItemSheet && selectedMenuItem != null) {
+        SimpleItemBottomSheet(
+            menuItem = selectedMenuItem!!,
+            onDismiss = {
+                showSimpleItemSheet = false
+                selectedMenuItem = null
+            },
+            onAddToCart = { quantity ->
+                // Add to personal cart
+                cartViewModel.addItem(selectedMenuItem!!, quantity)
+                
+                // If in lobby, also sync to lobby
+                if (currentGroupOrder != null) {
+                    val cartItem = wingzone.zenith.data.models.CartItem(
+                        menuItem = selectedMenuItem!!,
+                        quantity = quantity,
+                        customization = null
+                    )
+                    groupOrderViewModel.addItemToGroupOrder(currentGroupOrder!!.id, cartItem) { result ->
+                        // Silently handle - item is in personal cart
+                    }
+                }
+                
+                showSimpleItemSheet = false
+                selectedMenuItem = null
+            }
+        )
+    }
+    
     // Show customization dialog
     if (showCustomizationDialog && selectedMenuItem != null) {
         EntreeCustomizationDialog(
@@ -241,23 +288,27 @@ fun MenuScreenGrid(
                 // Always dismiss dialog first for better UX
                 showCustomizationDialog = false
                 
+                // ALWAYS add to personal cart first
+                cartViewModel.addItem(selectedMenuItem!!, quantity, customization)
+                
+                // If in lobby, also sync to lobby
                 if (currentGroupOrder != null) {
-                    // Add to group lobby
                     val cartItem = wingzone.zenith.data.models.CartItem(
                         menuItem = selectedMenuItem!!,
                         quantity = quantity,
                         customization = customization
                     )
-                    groupOrderViewModel.addItemToGroupOrder(currentGroupOrder!!.id, cartItem) { result ->
-                        // Handle result if needed (show toast, etc.)
+                    // Use currentLobbyId from LobbyViewModel for group order syncing
+                    if (currentLobbyId != null) {
+                        groupOrderViewModel.addItemToGroupOrder(currentLobbyId!!, cartItem) { result ->
+                            // Handle result if needed (show toast, etc.)
+                        }
                     }
-                } else {
-                    // Add to individual cart
-                    cartViewModel.addItem(selectedMenuItem!!, quantity, customization)
                 }
             },
-            activeLobbyId = currentGroupOrder?.id,
-            activeLobbyCode = currentGroupOrder?.code
+            activeLobbyId = currentLobbyId,
+            activeLobbyCode = currentGroupOrder?.code,
+            userHasPaid = userHasPaid
         )
     }
 }

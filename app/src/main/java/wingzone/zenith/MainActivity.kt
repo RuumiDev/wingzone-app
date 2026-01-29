@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
             // Permission denied - notifications won't work
         }
     }
-    
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -116,7 +116,10 @@ suspend fun loadLobbyAsGroupOrder(
                 createdAt = (lobbyData["createdAt"] as? com.google.firebase.Timestamp)?.toDate() ?: java.util.Date(),
                 expiresAt = (lobbyData["expiresAt"] as? com.google.firebase.Timestamp)?.toDate() ?: java.util.Date(),
                 deliveryAddress = null,
-                specialInstructions = null
+                specialInstructions = null,
+                orderType = lobbyData["orderType"] as? String,
+                location = (lobbyData["location"] as? Map<String, Any>)?.get("name") as? String,
+                paymentMethod = lobbyData["paymentMethod"] as? String
             )
             
             // Add to repository cache so addItemToGroupOrder can find it
@@ -174,7 +177,12 @@ fun AppNavigation() {
     val authViewModel = remember { AuthViewModel() }
     val cartViewModel = remember { CartViewModel() }
     val groupOrderViewModel = remember { GroupOrderViewModel() }
-    val lobbyViewModel = remember { wingzone.zenith.viewmodel.LobbyViewModel(context.applicationContext as android.app.Application) }
+    val lobbyViewModel = remember { 
+        wingzone.zenith.viewmodel.LobbyViewModel(
+            context.applicationContext as android.app.Application,
+            groupOrderViewModel = groupOrderViewModel
+        ) 
+    }
     var requiresAuth by remember { mutableStateOf(false) }
     var showOrderTracking by remember { mutableStateOf(false) }
     var trackingOrderId by remember { mutableStateOf<String?>(null) }
@@ -357,8 +365,9 @@ fun AppNavigation() {
             wingzone.zenith.ui.screens.LobbyDetailScreen(
                 lobbyId = (currentScreen as Screen.LobbyDetail).lobbyId,
                 currentUserId = authViewModel.getCurrentUser()?.id ?: "",
+                lobbyViewModel = lobbyViewModel,
                 onNavigateBack = {
-                    groupOrderViewModel.setCurrentGroupOrder(null)
+                    // Don't clear currentGroupOrder - keep lobby context active
                     selectedTab = 3
                     currentScreen = Screen.Home
                 },

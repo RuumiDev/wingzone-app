@@ -50,12 +50,18 @@ class FirebaseMenuRepository {
                 } else null
             } ?: emptyList()
             
-            // Parse available flavors from document root
-            val availableFlavors = (flavors as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+            // Parse available flavors from customizationOptions.availableFlavors first, fallback to document root flavors
+            val availableFlavors = (data["availableFlavors"] as? List<*>)?.mapNotNull { it as? String } 
+                ?: (flavors as? List<*>)?.mapNotNull { it as? String } 
+                ?: emptyList()
             
             // Parse beverages and dipping sauces from customizationOptions
-            val availableBeverages = (data["beverages"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
-            val availableDippingSauces = (data["dippingSauces"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+            val availableBeverages = (data["availableBeverages"] as? List<*>)?.mapNotNull { it as? String } 
+                ?: (data["beverages"] as? List<*>)?.mapNotNull { it as? String } 
+                ?: emptyList()
+            val availableDippingSauces = (data["availableDippingSauces"] as? List<*>)?.mapNotNull { it as? String } 
+                ?: (data["dippingSauces"] as? List<*>)?.mapNotNull { it as? String } 
+                ?: emptyList()
             val availableBoneTypes = (data["availableBoneTypes"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
             
             return CustomizationOptions(
@@ -64,6 +70,7 @@ class FirebaseMenuRepository {
                 requiresDippingSauce = data["requiresDippingSauce"] as? Boolean ?: false,
                 requiresBoneType = data["requiresBoneType"] as? Boolean ?: false,
                 allowFriesExchange = data["allowFriesExchange"] as? Boolean ?: false,
+                requiresSaladChoice = data["requiresSaladChoice"] as? Boolean ?: false,
                 availableFlavors = availableFlavors,
                 availableBeverages = availableBeverages,
                 availableDippingSauces = availableDippingSauces,

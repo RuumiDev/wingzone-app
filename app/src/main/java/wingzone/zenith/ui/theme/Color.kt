@@ -25,19 +25,20 @@ val TextSecondaryDark = Color(0xFFB0B0B0)
 val CardWhiteDark = Color(0xFF2C2C2C)
 
 /**
- * Get adaptive text colors based on system dark mode
+ * Get adaptive text colors - FORCED to light mode for WingZone branding
+ * (App uses forced light theme, ignoring system dark mode)
  */
 @Composable
 fun getAdaptiveTextPrimary(): Color {
-    return if (isSystemInDarkTheme()) TextPrimaryDark else TextPrimary
+    return TextPrimary  // Always use light mode text
 }
 
 @Composable
 fun getAdaptiveTextSecondary(): Color {
-    return if (isSystemInDarkTheme()) TextSecondaryDark else TextSecondary
+    return TextSecondary  // Always use light mode text
 }
 
 @Composable
 fun getAdaptiveCardBackground(): Color {
-    return if (isSystemInDarkTheme()) CardWhiteDark else CardWhite
+    return CardWhite  // Always use light mode background
 }

@@ -43,7 +43,10 @@ class FirebaseOrderRepository {
         paymentMethod: String,
         deliveryAddress: String? = null,
         deliveryNotes: String? = null,
-        phoneNumber: String? = null
+        phoneNumber: String? = null,
+        orderType: String? = null,
+        location: String? = null,
+        lobbyPaymentMethod: String? = null
     ): Result<String> {
         return createOrderInternal(
             userId = userId,
@@ -54,7 +57,10 @@ class FirebaseOrderRepository {
             deliveryNotes = deliveryNotes,
             phoneNumber = phoneNumber,
             isGroupOrder = false,
-            groupOrderCode = null
+            groupOrderCode = null,
+            orderType = orderType,
+            location = location,
+            lobbyPaymentMethod = lobbyPaymentMethod
         )
     }
     
@@ -100,7 +106,7 @@ class FirebaseOrderRepository {
                 "total" to cart.total,
                 "totalItems" to cart.totalItems,
                 "status" to "pending",
-                "paymentStatus" to "unpaid",
+                "paymentStatus" to "paid",
                 "paymentMethod" to paymentMethod,
                 "createdAt" to Date(),
                 "updatedAt" to Date(),
@@ -125,7 +131,10 @@ class FirebaseOrderRepository {
         deliveryNotes: String? = null,
         phoneNumber: String? = null,
         isGroupOrder: Boolean,
-        groupOrderCode: String?
+        groupOrderCode: String?,
+        orderType: String? = null,
+        location: String? = null,
+        lobbyPaymentMethod: String? = null
     ): Result<String> {
         return try {
             val orderData = hashMapOf(
@@ -133,6 +142,9 @@ class FirebaseOrderRepository {
                 "userName" to userName,
                 "isGroupOrder" to isGroupOrder,
                 "groupOrderCode" to (groupOrderCode ?: ""),
+                "orderType" to (orderType ?: "pickup"),
+                "location" to (location ?: ""),
+                "lobbyPaymentMethod" to (lobbyPaymentMethod ?: ""),
                 "items" to cart.items.map { item ->
                     hashMapOf(
                         "menuItem" to hashMapOf(
@@ -163,7 +175,7 @@ class FirebaseOrderRepository {
                 "total" to cart.total,
                 "totalItems" to cart.totalItems,
                 "status" to "pending",
-                "paymentStatus" to "unpaid",
+                "paymentStatus" to "paid",
                 "paymentMethod" to paymentMethod,
                 "createdAt" to Date(),
                 "updatedAt" to Date(),

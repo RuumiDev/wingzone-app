@@ -58,6 +58,9 @@ const MenuPage: React.FC = () => {
     displayOrder: '',
     ingredients: [] as Array<{ type: string; quantity: number; requiresSelection: boolean }>,
     requiresCustomization: false,
+    requiresFlavor: false,
+    requiresDippingSauce: false,
+    requiresBeverage: false,
     allowFriesExchange: false,
     flavors: [] as string[],
     requiresBoneType: false,
@@ -100,6 +103,9 @@ const MenuPage: React.FC = () => {
         displayOrder: '',
         ingredients: [],
         requiresCustomization: false,
+        requiresFlavor: false,
+        requiresDippingSauce: false,
+        requiresBeverage: false,
         allowFriesExchange: false,
         flavors: [],
         requiresBoneType: false,
@@ -121,6 +127,9 @@ const MenuPage: React.FC = () => {
       displayOrder: item.displayOrder?.toString() || '',
       ingredients: item.kitchenIngredients?.ingredients || [],
       requiresCustomization: item.requiresCustomization || false,
+      requiresFlavor: item.customizationOptions?.requiresFlavor || false,
+      requiresDippingSauce: item.customizationOptions?.requiresDippingSauce || false,
+      requiresBeverage: item.customizationOptions?.requiresBeverage || false,
       allowFriesExchange: item.customizationOptions?.allowFriesExchange || false,
       flavors: item.customizationOptions?.availableFlavors || [],
       requiresBoneType: item.customizationOptions?.requiresBoneType || false,
@@ -142,13 +151,16 @@ const MenuPage: React.FC = () => {
       }
 
       const customizationOptions: any = {
-        requiresBoneType: formData.requiresBoneType,
-        allowFriesExchange: formData.allowFriesExchange,
-        requiresFlavor: formData.requiresCustomization && formData.flavors.length > 0,
-        requiresDippingSauce: formData.requiresCustomization,
-        requiresBeverage: formData.requiresCustomization,
-        requiresSaladChoice: formData.requiresSaladChoice,
+        requiresBoneType: formData.requiresBoneType || false,
+        allowFriesExchange: formData.allowFriesExchange || false,
+        requiresFlavor: formData.requiresFlavor || false,
+        requiresDippingSauce: formData.requiresDippingSauce || false,
+        requiresBeverage: formData.requiresBeverage || false,
+        requiresSaladChoice: formData.requiresSaladChoice || false,
       };
+      
+      // Debug log
+      console.log('Saving customizationOptions:', customizationOptions);
 
       // Only add fields that have values (avoid undefined)
       if (formData.availableBoneTypes.length > 0) {
@@ -171,12 +183,20 @@ const MenuPage: React.FC = () => {
         ];
       }
 
+      // Auto-set requiresCustomization to true if any customization option is enabled
+      const requiresCustomization = formData.requiresFlavor || 
+                                   formData.requiresDippingSauce || 
+                                   formData.requiresBeverage || 
+                                   formData.requiresBoneType || 
+                                   formData.allowFriesExchange ||
+                                   formData.requiresSaladChoice;
+
       const itemData: any = {
         name: formData.name,
         price: parseFloat(formData.price),
         category: formData.category,
         description: formData.description,
-        requiresCustomization: formData.requiresCustomization,
+        requiresCustomization: requiresCustomization,
         isAvailable: editItem?.isAvailable ?? true,
         customizationOptions
       };
@@ -550,7 +570,7 @@ const MenuPage: React.FC = () => {
         )}
       </Widget>
 
-      <Modal isOpen={modal} toggle={toggleModal}>
+      <Modal isOpen={modal} toggle={toggleModal} size="xl">
         <ModalHeader toggle={toggleModal}>
           {editItem ? 'Edit Menu Item' : 'Add Menu Item'}
         </ModalHeader>
@@ -810,21 +830,50 @@ const MenuPage: React.FC = () => {
               </Button>
             </FormGroup>
             <FormGroup>
-              <div className="d-flex align-items-center">
+              <Label className="fw-bold mb-3">Customization Requirements</Label>
+              <div className="d-flex align-items-center mb-2">
                 <Input 
                   type="checkbox" 
-                  id="requiresCustomization"
-                  checked={formData.requiresCustomization}
-                  onChange={(e) => setFormData({...formData, requiresCustomization: e.target.checked})}
+                  id="requiresFlavor"
+                  checked={formData.requiresFlavor}
+                  onChange={(e) => setFormData({...formData, requiresFlavor: e.target.checked})}
                   className="me-2"
                 />
-                <Label for="requiresCustomization" className="mb-0">
-                  Requires Customization (flavor, size, etc.)
+                <Label for="requiresFlavor" className="mb-0">
+                  Requires Flavor Selection
                 </Label>
               </div>
-            </FormGroup>
-            <FormGroup>
-              <div className="d-flex align-items-center">
+              <small className="text-muted d-block mb-3">Customer must choose a wing/tender flavor (Buffalo, Garlic Parm, etc.)</small>
+              
+              <div className="d-flex align-items-center mb-2">
+                <Input 
+                  type="checkbox" 
+                  id="requiresDippingSauce"
+                  checked={formData.requiresDippingSauce}
+                  onChange={(e) => setFormData({...formData, requiresDippingSauce: e.target.checked})}
+                  className="me-2"
+                />
+                <Label for="requiresDippingSauce" className="mb-0">
+                  Requires Dipping Sauce
+                </Label>
+              </div>
+              <small className="text-muted d-block mb-3">Customer must choose Ranch or Blue Cheese</small>
+              
+              <div className="d-flex align-items-center mb-2">
+                <Input 
+                  type="checkbox" 
+                  id="requiresBeverage"
+                  checked={formData.requiresBeverage}
+                  onChange={(e) => setFormData({...formData, requiresBeverage: e.target.checked})}
+                  className="me-2"
+                />
+                <Label for="requiresBeverage" className="mb-0">
+                  Requires Beverage Selection
+                </Label>
+              </div>
+              <small className="text-muted d-block mb-3">Customer must choose a drink</small>
+              Flavor
+              <div className="d-flex align-items-center mb-2">
                 <Input 
                   type="checkbox" 
                   id="allowFriesExchange"
@@ -833,12 +882,12 @@ const MenuPage: React.FC = () => {
                   className="me-2"
                 />
                 <Label for="allowFriesExchange" className="mb-0">
-                  Allow Sides Exchange (for wings with fries)
+                  Allow Sides Exchange
                 </Label>
               </div>
-            </FormGroup>
-            <FormGroup>
-              <div className="d-flex align-items-center">
+              <small className="text-muted d-block mb-3">Customer can swap fries for premium sides</small>
+              
+              <div className="d-flex align-items-center mb-2">
                 <Input 
                   type="checkbox" 
                   id="requiresSaladChoice"
@@ -847,10 +896,10 @@ const MenuPage: React.FC = () => {
                   className="me-2"
                 />
                 <Label for="requiresSaladChoice" className="mb-0">
-                  Requires Salad Choice (Garden or Caesar Salad)
+                  Requires Salad Choice (Garden or Caesar)
                 </Label>
               </div>
-              <small className="text-muted">Use this for items like Entree 9 that include salad selection</small>
+              <small className="text-muted d-block">Use this for items like Entree 9 that include salad selection</small>
             </FormGroup>
             {formData.requiresCustomization && (
               <>

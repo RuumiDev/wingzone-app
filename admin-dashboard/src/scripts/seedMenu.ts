@@ -20,7 +20,7 @@ const FLAVORS = [
 ];
 
 const BEVERAGES = [
-  'Coca-Cola',
+  'Coke',
   'Coke Zero',
   'Sprite',
   'Iced Lemon Tea',

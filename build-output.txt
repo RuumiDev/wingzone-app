@@ -2,44 +2,119 @@
 > Task :app:preDebugBuild UP-TO-DATE
 > Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
 > Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
-> Task :app:checkDebugAarMetadata
-> Task :app:processDebugNavigationResources
-> Task :app:compileDebugNavigationResources
-> Task :app:generateDebugResValues
-> Task :app:processDebugGoogleServices
-> Task :app:mapDebugSourceSetPaths
-> Task :app:generateDebugResources
-> Task :app:packageDebugResources
-> Task :app:createDebugCompatibleScreenManifests
-> Task :app:parseDebugLocalResources
-> Task :app:extractDeepLinksDebug
-> Task :app:processDebugMainManifest
-> Task :app:processDebugManifest
-> Task :app:mergeDebugResources
-> Task :app:javaPreCompileDebug
-> Task :app:mergeDebugShaders
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :app:processDebugNavigationResources UP-TO-DATE
+> Task :app:compileDebugNavigationResources UP-TO-DATE
+> Task :app:generateDebugResValues UP-TO-DATE
+> Task :app:processDebugGoogleServices UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :app:processDebugMainManifest UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :app:processDebugManifestForPackage UP-TO-DATE
+> Task :app:javaPreCompileDebug UP-TO-DATE
+> Task :app:mergeDebugShaders UP-TO-DATE
 > Task :app:compileDebugShaders NO-SOURCE
 > Task :app:generateDebugAssets UP-TO-DATE
-> Task :app:mergeDebugAssets
-> Task :app:compressDebugAssets
-> Task :app:desugarDebugFileDependencies
-> Task :app:mergeDebugJniLibFolders
-> Task :app:processDebugManifestForPackage
-> Task :app:mergeDebugNativeLibs
-> Task :app:checkDebugDuplicateClasses
-> Task :app:processDebugResources FAILED
+> Task :app:mergeDebugAssets UP-TO-DATE
+> Task :app:compressDebugAssets UP-TO-DATE
+> Task :app:checkDebugDuplicateClasses UP-TO-DATE
+> Task :app:desugarDebugFileDependencies UP-TO-DATE
+> Task :app:mergeExtDexDebug UP-TO-DATE
+> Task :app:mergeLibDexDebug UP-TO-DATE
+> Task :app:mergeDebugJniLibFolders UP-TO-DATE
+> Task :app:mergeDebugNativeLibs UP-TO-DATE
+> Task :app:stripDebugDebugSymbols UP-TO-DATE
+> Task :app:validateSigningDebug UP-TO-DATE
+> Task :app:writeDebugAppMetadata UP-TO-DATE
+> Task :app:writeDebugSigningConfigVersions UP-TO-DATE
+> Task :app:processDebugResources
 
-FAILURE: Build failed with an exception.
+> Task :app:compileDebugKotlin
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/com/example/wz_app/ui/components/GroupOrderScreen.kt:86:58 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/com/example/wz_app/ui/components/GroupOrderScreen.kt:90:65 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/com/example/wz_app/ui/components/GroupOrderScreen.kt:118:55 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/com/example/wz_app/ui/components/GroupOrderScreen.kt:122:61 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/com/example/wz_app/ui/components/GroupOrderScreen.kt:154:44 'val Icons.Filled.ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.ArrowBack.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/com/example/wz_app/ui/components/GroupOrderScreen.kt:308:82 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.String>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/com/example/wz_app/ui/components/GroupOrderScreen.kt:329:75 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/com/example/wz_app/ui/components/GroupOrderScreen.kt:333:81 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/com/example/wz_app/ui/components/GroupOrderScreen.kt:673:48 'val Icons.Filled.ExitToApp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.ExitToApp.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/com/example/wz_app/ui/components/GroupOrderScreen.kt:779:35 'val Icons.Filled.Send: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.Send.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/com/example/wz_app/ui/components/GroupOrderScreen.kt:828:44 'val Icons.Filled.Send: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.Send.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/MainActivity.kt:121:51 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.Map<kotlin.String, kotlin.Any>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/data/repository/FirebaseAuthRepository.kt:27:18 'fun setPersistenceEnabled(p0: Boolean): FirebaseFirestoreSettings.Builder' is deprecated. Deprecated in Java.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/data/repository/FirebaseGroupOrderRepository.kt:54:47 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/data/repository/FirebaseGroupOrderRepository.kt:81:51 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/data/repository/FirebaseGroupOrderRepository.kt:100:49 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.Map<kotlin.String, kotlin.Any>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/data/repository/FirebaseGroupOrderRepository.kt:101:59 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.Map<kotlin.String, kotlin.Any>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/data/repository/FirebaseGroupOrderRepository.kt:247:52 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.String>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/data/repository/FirebaseGroupOrderRepository.kt:270:49 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/data/repository/FirebaseGroupOrderRepository.kt:319:49 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/data/repository/FirebaseGroupOrderRepository.kt:396:49 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/data/repository/FirebaseGroupOrderRepository.kt:397:53 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.String>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/components/OrderStatusBottomSheet.kt:185:57 'val Icons.Filled.KeyboardArrowRight: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.KeyboardArrowRight.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/AccountScreen.kt:743:45 'val Icons.Filled.KeyboardArrowRight: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.KeyboardArrowRight.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/AuthScreens.kt:82:45 'val Icons.Filled.ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.ArrowBack.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/AuthScreens.kt:304:45 'val Icons.Filled.ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.ArrowBack.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/CartScreen.kt:750:50 Condition is always 'true'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/CartScreen.kt:1161:18 'fun Modifier.menuAnchor(): Modifier' is deprecated. Use overload that takes MenuAnchorType and enabled parameters.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/CreateLobbyScreen.kt:210:34 'fun Modifier.menuAnchor(): Modifier' is deprecated. Use overload that takes MenuAnchorType and enabled parameters.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/EntreeCustomizationDialog.kt:96:61 'val Icons.Filled.ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.ArrowBack.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/GroupOrderDetailsScreen.kt:80:44 'val Icons.Filled.ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.ArrowBack.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/GroupOrderDetailsScreen.kt:207:113 'val Icons.Filled.Send: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.Send.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/GroupOrderDetailsScreen.kt:711:31 'val Icons.Filled.Send: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.Send.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/GroupOrderScreen.kt:771:53 'val outlinedButtonBorder: BorderStroke' is deprecated. Please use the version that takes an `enabled` param to get the `BorderStroke` with the correct opacity.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/GroupOrderScreen.kt:798:49 'val outlinedButtonBorder: BorderStroke' is deprecated. Please use the version that takes an `enabled` param to get the `BorderStroke` with the correct opacity.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/GroupOrderScreen.kt:899:46 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.Map<kotlin.String, kotlin.Any>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/GroupOrderScreen.kt:1005:44 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/GroupOrderScreen.kt:1031:46 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.Map<kotlin.String, kotlin.Any>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/JoinLobbyScreen.kt:336:17 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/JoinLobbyScreen.kt:342:17 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/LobbyDetailScreen.kt:212:13 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/LobbyDetailScreen.kt:229:40 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.Map<kotlin.String, kotlin.Any>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/LobbyDetailScreen.kt:251:72 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.Map<kotlin.String, kotlin.Any>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/LobbyDetailScreen.kt:271:74 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.Map<kotlin.String, kotlin.Any>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/LobbyDetailScreen.kt:301:88 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.Map<kotlin.String, kotlin.Any>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/LobbyDetailScreen.kt:368:29 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/LobbyDetailScreen.kt:643:69 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.Map<kotlin.String, kotlin.Any>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/LobbyDetailScreen.kt:701:71 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/LobbyDetailScreen.kt:724:55 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/LobbyDetailScreen.kt:896:52 'val Icons.Filled.ExitToApp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.ExitToApp.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/LobbyDetailScreen.kt:1025:69 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/LobbyDetailScreen.kt:1049:41 'val Icons.Filled.ExitToApp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.ExitToApp.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/LobbyDetailScreen.kt:1057:45 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/LobbyDetailScreen.kt:1162:69 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/OrderHistoryScreen.kt:108:57 'val Icons.Filled.ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.ArrowBack.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/OrderHistoryScreen.kt:449:25 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/OrderHistoryScreen.kt:469:25 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/OrderTrackingDetailScreen.kt:99:57 'val Icons.Filled.ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.ArrowBack.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/OrderTrackingDetailScreen.kt:456:61 'fun String.capitalize(): String' is deprecated. Use replaceFirstChar instead.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/OrderTrackingDetailScreen.kt:459:61 'fun String.capitalize(): String' is deprecated. Use replaceFirstChar instead.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/OrderTrackingDetailScreen.kt:509:24 'fun String.capitalize(): String' is deprecated. Use replaceFirstChar instead.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/OrderTrackingScreen.kt:74:58 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/OrderTrackingScreen.kt:106:57 'val Icons.Filled.ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.ArrowBack.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/OrderTrackingScreen.kt:244:13 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/QRScannerScreen.kt:219:26 'val LocalLifecycleOwner: ProvidableCompositionLocal<LifecycleOwner>' is deprecated. Moved to lifecycle-runtime-compose library in androidx.lifecycle.compose package.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/ui/screens/RewardsScreen.kt:365:13 'fun LinearProgressIndicator(progress: Float, modifier: Modifier = ..., color: Color = ..., trackColor: Color = ..., strokeCap: StrokeCap = ...): Unit' is deprecated. Use the overload that takes `progress` as a lambda.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/viewmodel/LobbyViewModel.kt:209:55 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/viewmodel/LobbyViewModel.kt:316:50 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.List<kotlin.collections.Map<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/viewmodel/LobbyViewModel.kt:415:51 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.MutableList<kotlin.collections.MutableMap<kotlin.String, kotlin.Any>>'.
+w: file:///C:/Users/Rog/Documents/Amiki/Chp5/MP/wz-app/app/src/main/java/wingzone/zenith/viewmodel/LobbyViewModel.kt:495:32 Unchecked cast of 'kotlin.Any?' to 'kotlin.collections.Map<kotlin.String, kotlin.Any>'.
 
-* What went wrong:
-Execution failed for task ':app:processDebugResources'.
-> java.io.IOException: Couldn't delete C:\Users\Rog\Documents\Amiki\Chp5\MP\wz-app\app\build\intermediates\compile_and_runtime_not_namespaced_r_class_jar\debug\processDebugResources\R.jar
+> Task :app:compileDebugJavaWithJavac NO-SOURCE
+> Task :app:processDebugJavaRes UP-TO-DATE
+> Task :app:mergeDebugJavaResource UP-TO-DATE
+> Task :app:dexBuilderDebug
+> Task :app:mergeProjectDexDebug
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect UP-TO-DATE
+> Task :app:assembleDebug
 
-* Try:
-> Run with --stacktrace option to get the stack trace.
-> Run with --info or --debug option to get more log output.
-> Run with --scan to get full insights.
-> Get more help at https://help.gradle.org.
-
-BUILD FAILED in 7s
-24 actionable tasks: 24 executed
+BUILD SUCCESSFUL in 28s
+37 actionable tasks: 5 executed, 32 up-to-date

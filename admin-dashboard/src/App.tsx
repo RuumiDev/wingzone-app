@@ -11,11 +11,12 @@ import UsersPage from './pages/UsersPage';
 import SeedMenuPage from './pages/SeedMenuPage';
 import AvailabilityPage from './pages/AvailabilityPage';
 import SettingsPage from './pages/SettingsPage';
+import BannersPage from './pages/BannersPage';
 import Sidebar from './components/Sidebar/Sidebar';
 import Header from './components/Header/Header';
 import ToastNotification from './components/ToastNotification/ToastNotification';
 
-type Page = 'dashboard' | 'menu' | 'orders' | 'users' | 'seed' | 'availability' | 'settings';
+type Page = 'dashboard' | 'menu' | 'orders' | 'users' | 'seed' | 'availability' | 'settings' | 'banners';
 
 interface ToastData {
   show: boolean;
@@ -120,6 +121,8 @@ function App() {
         return <AvailabilityPage />;
       case 'settings':
         return <SettingsPage />;
+      case 'banners':
+        return <BannersPage />;
       default:
         return <DashboardPage onNavigate={(page) => setCurrentPage(page as Page)} />;
     }

@@ -1,6 +1,9 @@
 // Auto-print service for group order receipts
 import { notificationService } from './notifications';
 import { aggregateKitchenIngredients } from '../utils/kitchenIngredients';
+import thermalPrinter from './thermalPrinter';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 export interface GroupOrderParticipant {
   userId: string;
@@ -22,14 +25,94 @@ export interface GroupOrderForPrint {
   participants: GroupOrderParticipant[];
   orderDate: Date;
   total: number;
+  orderType?: string;
+  location?: string;
+  paymentMethod?: string;
 }
 
 class PrintService {
   private autoPrintEnabled: boolean = true;
+  private menuItemsCache: Map<string, any> = new Map();
 
   // Set auto-print preference
   setAutoPrintEnabled(enabled: boolean) {
     this.autoPrintEnabled = enabled;
+  }
+
+  // Fetch menu items from Firestore and cache them
+  private async getMenuItems(): Promise<Map<string, any>> {
+    if (this.menuItemsCache.size > 0) {
+      return this.menuItemsCache;
+    }
+
+    try {
+      const menuSnapshot = await getDocs(collection(db, 'menuItems'));
+      menuSnapshot.forEach(doc => {
+        const menuData = { id: doc.id, ...doc.data() };
+        this.menuItemsCache.set(doc.id, menuData);
+        // Also index by name for fallback matching
+        if (menuData.name) {
+          this.menuItemsCache.set(menuData.name, menuData);
+        }
+      });
+      console.log(`[PrintService] Loaded ${menuSnapshot.size} menu items into cache`);
+      return this.menuItemsCache;
+    } catch (error) {
+      console.error('[PrintService] Error fetching menu items:', error);
+      return new Map();
+    }
+  }
+
+  // Enrich cart items with full menu data (kitchen ingredients)
+  private async enrichItemsWithMenuData(items: any[], menuItems?: any[]): Promise<any[]> {
+    // If no menu items provided, try to fetch from Firestore
+    let menuItemsArray = menuItems;
+    if (!menuItemsArray || menuItemsArray.length === 0) {
+      const menuItemsMap = await this.getMenuItems();
+      menuItemsArray = Array.from(menuItemsMap.values());
+    }
+    
+    console.log(`[PrintService] Enriching ${items.length} items with ${menuItemsArray?.length || 0} menu items`);
+    
+    return items.map((item, index) => {
+      console.log(`[PrintService] Item ${index} raw data:`, item);
+      
+      // Check ALL possible fields where the name might be
+      const itemName = item.menuItemName || item.name || item.itemName || 
+                      item.menuItem?.name || item.item?.name || item.displayName ||
+                      item.productName || item.title;
+      
+      console.log(`[PrintService] Item ${index} extracted name: "${itemName}" from fields:`, {
+        menuItemName: item.menuItemName,
+        name: item.name,
+        itemName: item.itemName,
+        menuItemDotName: item.menuItem?.name,
+        allKeys: Object.keys(item)
+      });
+      
+      if (!itemName) {
+        console.error(`[PrintService] ✗ Item ${index} has NO name in any field!`, item);
+        // Return item as-is but log the issue
+        return item;
+      }
+      
+      // Find matching menu item by name
+      const menuItem = menuItemsArray?.find((m: any) => 
+        m.name === itemName || m.name?.toLowerCase() === itemName?.toLowerCase()
+      );
+      
+      if (menuItem) {
+        console.log(`[PrintService] ✓ Enriched "${itemName}" with kitchen ingredients`);
+        return {
+          ...item,
+          menuItem: menuItem,
+          kitchenIngredients: menuItem.kitchenIngredients
+        };
+      }
+      
+      console.warn(`[PrintService] ✗ No menu match for: "${itemName}"`);
+      return item;
+    });
   }
 
   // Format receipt HTML for a single participant
@@ -268,7 +351,7 @@ class PrintService {
           ${customization.dippingSauce ? `
             <tr>
               <td colspan="2" style="padding: 2px 0 2px 10px; background: #ffeb9c;">
-                > *** DIP: ${customization.dippingSauce.toUpperCase().replace(/_/g, ' ')} ***
+                >  DIP: ${customization.dippingSauce.toUpperCase().replace(/_/g, ' ')} 
               </td>
             </tr>
           ` : ''}
@@ -470,7 +553,7 @@ class PrintService {
           </div>
           <div style="margin-top: 10px; font-size: 10px;">
             WIFI PASSWORD<br>
-            wingzone123
+            Wingzone123
           </div>
         </div>
       </body>
@@ -479,55 +562,125 @@ class PrintService {
   }
 
   // Print individual receipts for all participants in a group order
-  async printGroupOrderReceipts(groupOrder: GroupOrderForPrint, menuItems?: any[], printerName?: string) {
-    if (!this.autoPrintEnabled) {
-      console.log('Auto-print is disabled');
+  async printGroupOrderReceipts(groupOrder: GroupOrderForPrint, menuItems?: any[], printerName?: string, forcePrint: boolean = false) {
+    if (!this.autoPrintEnabled && !forcePrint) {
+      console.log('Auto-print is disabled and forcePrint is false');
       return;
     }
 
     try {
       const totalParticipants = groupOrder.participants.length;
-      console.log(`Printing ${totalParticipants} receipts to printer: ${printerName || 'Default'}`);
+      console.log(`[PrintService] Printing MASTER + ${totalParticipants} member receipts using QZ Tray to printer: ${printerName || 'Default'}`);
+      console.log(`[PrintService] Auto-print enabled: ${this.autoPrintEnabled}, Force print: ${forcePrint}`);
 
-      // Print each participant's receipt
-      for (let i = 0; i < groupOrder.participants.length; i++) {
-        const participant = groupOrder.participants[i];
-        const receiptHtml = this.formatParticipantReceipt(
-          participant,
-          groupOrder,
-          i + 1,
-          totalParticipants,
-          menuItems
-        );
+      // STEP 1: Print MASTER receipt first (all items combined)
+      console.log('=== Printing MASTER RECEIPT ===');
+      
+      // Combine all items from all participants and enrich with menu data
+      const allItems: any[] = [];
+      groupOrder.participants.forEach(participant => {
+        participant.items.forEach(item => {
+          allItems.push({
+            ...item,
+            memberName: participant.userName
+          });
+        });
+      });
+      
+      // Enrich items with kitchen ingredients from menu
+      const enrichedAllItems = await this.enrichItemsWithMenuData(allItems, menuItems);
 
-        // Create a new window for printing
-        const printWindow = window.open('', '_blank', 'width=300,height=600');
-        if (printWindow) {
-          printWindow.document.write(receiptHtml);
-          printWindow.document.close();
+      const masterSuccess = await thermalPrinter.printReceipt(
+        {
+          id: groupOrder.id,
+          groupOrderCode: groupOrder.id.substring(0, 8).toUpperCase(),
+          code: groupOrder.id.substring(0, 8).toUpperCase(),
+          hostUserName: groupOrder.hostUserName,
+          userName: groupOrder.hostUserName,
+          items: enrichedAllItems,
+          total: groupOrder.total,
+          subtotal: groupOrder.total,
+          createdAt: groupOrder.orderDate,
+          isGroupOrder: true,
+          lobbyId: groupOrder.id,
+          orderType: groupOrder.orderType,
+          location: groupOrder.location,
+          selectedLocation: groupOrder.location,
+          paymentMethod: groupOrder.paymentMethod,
+          members: await Promise.all(groupOrder.participants.map(async (p) => ({
+            userName: p.userName,
+            name: p.userName,
+            cartItems: await this.enrichItemsWithMenuData(p.items, menuItems)
+          }))),
+          memberCount: totalParticipants
+        },
+        { printerName: printerName }
+      );
 
-          // Wait for content to load, then print
-          printWindow.onload = () => {
-            setTimeout(() => {
-              // If printer name is specified, try to use it
-              // Note: Browser APIs don't allow direct printer selection
-              // This will show the print dialog where user can select
-              printWindow.print();
-              // Close after printing (user can cancel)
-              setTimeout(() => {
-                printWindow.close();
-              }, 500);
-            }, 250);
-          };
-        }
-
-        // Small delay between prints to avoid browser issues
-        await new Promise((resolve) => setTimeout(resolve, 500));
+      if (!masterSuccess) {
+        console.error('Failed to print MASTER receipt');
+      } else {
+        console.log('✓ MASTER receipt printed');
       }
 
-      console.log(`Printed ${totalParticipants} receipts for group order ${groupOrder.id}`);
+      // Delay before printing member receipts
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // STEP 2: Print each participant's individual receipt
+      console.log(`=== Printing ${totalParticipants} MEMBER RECEIPTS ===`);
+      
+      for (let i = 0; i < groupOrder.participants.length; i++) {
+        const participant = groupOrder.participants[i];
+        
+        console.log(`Printing member receipt ${i + 1}/${totalParticipants} for ${participant.userName}`);
+        
+        // Enrich participant items with menu data
+        const enrichedParticipantItems = await this.enrichItemsWithMenuData(participant.items, menuItems);
+
+        // Use thermal printer service to print member receipt
+        const success = await thermalPrinter.printReceipt(
+          {
+            id: groupOrder.id,
+            groupOrderCode: groupOrder.id.substring(0, 8).toUpperCase(),
+            code: groupOrder.id.substring(0, 8).toUpperCase(),
+            userName: participant.userName,
+            items: enrichedParticipantItems,
+            total: participant.total,
+            subtotal: participant.total,
+            createdAt: groupOrder.orderDate,
+            isGroupOrder: true,
+            isMemberReceipt: true,
+            lobbyId: groupOrder.id,
+            orderType: groupOrder.orderType,
+            location: groupOrder.location,
+            selectedLocation: groupOrder.location,
+            paymentMethod: groupOrder.paymentMethod,
+            memberIndex: i + 1,
+            totalMembers: totalParticipants
+          },
+          { printerName: printerName },
+          {
+            name: participant.userName,
+            cartItems: enrichedParticipantItems,
+            index: i + 1,
+            total: participant.total
+          }
+        );
+
+        if (!success) {
+          console.error(`Failed to print receipt for ${participant.userName}`);
+        } else {
+          console.log(`✓ Receipt printed for ${participant.userName}`);
+        }
+
+        // Small delay between prints to avoid printer issues
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+
+      console.log(`✓ Printed 1 MASTER + ${totalParticipants} MEMBER receipts for group order ${groupOrder.id}`);
     } catch (error) {
       console.error('Error printing group order receipts:', error);
+      throw error;
     }
   }
 

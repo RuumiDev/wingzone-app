@@ -91,7 +91,15 @@ fun JoinLobbyScreen(
                 isJoining = false
                 result.fold(
                     onSuccess = { lobbyId ->
-                        onLobbyJoined(lobbyId)
+                        Toast.makeText(
+                            context,
+                            "✓ You have joined the lobby!",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        // Delay navigation to ensure toast is visible
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            onLobbyJoined(lobbyId)
+                        }, 800)
                     },
                     onFailure = { error ->
                         errorMessage = error.message ?: "Failed to join lobby"

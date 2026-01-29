@@ -93,6 +93,16 @@ export class ThermalPrinterService {
     try {
       const receiptType = memberData ? `individual member (${memberData.name})` : 'master';
       console.log(`[QZ Tray] Starting ${receiptType} print job...`);
+      console.log('[QZ Tray] Order data:', {
+        location: order.location,
+        selectedLocation: order.selectedLocation,
+        paymentMethod: order.paymentMethod,
+        lobbyPaymentMethod: order.lobbyPaymentMethod,
+        isGroupOrder: order.isGroupOrder,
+        lobbyId: order.lobbyId,
+        hasMembers: !!order.members,
+        memberCount: order.members?.length
+      });
       
       if (!this.connected) {
         console.log('[QZ Tray] Not connected, attempting connection...');
@@ -132,13 +142,10 @@ export class ThermalPrinterService {
       console.log('[QZ Tray] Generated', commands.length, 'commands');
 
       // Configure print job
-      const printConfig = qz.configs.create(printerName, {
-        encoding: 'UTF-8',
-        size: { width: (config.paperWidth || 80) / 25.4, height: 11 } // Convert mm to inches
-      });
+      const printConfig = qz.configs.create(printerName);
 
-      // Print
-      console.log('[QZ Tray] Sending to printer...');
+      // Print receipt (no separate logo job to avoid paper cut)
+      console.log('[QZ Tray] Printing receipt...');
       await qz.print(printConfig, commands);
       console.log('[QZ Tray] ✓ Print job completed successfully');
       return true;
@@ -161,50 +168,105 @@ export class ThermalPrinterService {
     commands.push(`${ESC}@`); // Initialize
     commands.push(`${ESC}a\x01`); // Center align
     
-    // Header separator
-    commands.push('========================================\n');
+    // WINGZONE branding with branch address based on location
+    // Handle location as either string or object {name, address, etc.}
+    let locationName = '';
+    if (typeof order.location === 'string') {
+      locationName = order.location;
+    } else if (order.location && typeof order.location === 'object') {
+      locationName = order.location.name || order.location.id || '';
+    }
+    
+    let branchName = '(MERU BRANCH)';
+    let branchAddress1 = 'Petronas Lebuh Meru Raya Susuran Meru Raya,';
+    let branchAddress2 = 'Bandar Meru Raya 30030 Ipoh, Perak.';
+    
+    if (locationName.toLowerCase().includes('greentown')) {
+      branchName = '(GREENTOWN BRANCH)';
+      branchAddress1 = '20 Persiaran Greentown 1,';
+      branchAddress2 = 'Greentown Business Center, 30450 Ipoh, Perak';
+    }
+    
+    commands.push('\n');
+    commands.push('****************************************\n');
+    commands.push(`${ESC}!\x77`); // Quadruple size: 4x width + 4x height + bold
+    
+    commands.push('W I N G Z O N E\n');
+    commands.push(`${ESC}!\x00`); // Reset to normal
+    commands.push(`${branchName}\n`);
+    commands.push(`${ESC}!\x00`); // Reset to normal
+    commands.push(`${branchAddress1}\n`);
+    commands.push(`${branchAddress2}\n`);
+    commands.push('****************************************\n');
+  
     
     // Order type banner
-    commands.push(`${ESC}!\x38`); // Double height + bold
-    const orderType = order.lobbyId ? '** GROUP LOBBY **' : 
-                     order.orderType === 'dine-in' ? '** DINE-IN **' : '** CARRY-OUT **';
-    commands.push(orderType + '\n');
+    commands.push(`${ESC}!\x30`); // Double size
     
-    // If individual member receipt, show member info prominently
+    // Show if it's master or member receipt
     if (memberData) {
-      commands.push(`${ESC}!\x30`); // Double size
-      commands.push(`[MEMBER COPY]\n`);
+      commands.push('MEMBER RECEIPT\n');
+      commands.push(`${ESC}!\x10`); // Bold
+      commands.push(`${memberData.name.toUpperCase()}\n`);
+      commands.push(`${ESC}!\x00`); // Normal
+    } else if (order.lobbyId || order.isGroupOrder) {
+      commands.push('MASTER RECEIPT\n');
+      commands.push(`${ESC}!\x00`); // Normal
+      commands.push('Kitchen Production Copy\n');
+    } else {
+      // Show order type in double-size
+      console.log('[RECEIPT] Order type:', order.orderType, 'Type:', typeof order.orderType);
+      const type = (order.orderType || 'pickup').toLowerCase().replace(/[_-]/g, '');
+      const orderType = type === 'dinein' ? 'DINE-IN' : 'PICKUP';
+      commands.push(orderType + '\n');
       commands.push(`${ESC}!\x00`); // Normal
     }
     
-    commands.push(`${ESC}!\x00`); // Normal
+      commands.push('****************************************\n');
     
-    if (order.tableNumber) {
-      commands.push(`TABLE: ${order.tableNumber}\n`);
-    }
-    
-    if (order.lobbyId) {
-      commands.push(`LOBBY ID: #${order.code}\n`);
-      if (memberData) {
-        commands.push(`${ESC}!\x10`); // Bold
-        commands.push(`MEMBER: ${memberData.name.toUpperCase()}\n`);
-        commands.push(`${ESC}!\x00`); // Normal
-      } else {
-        commands.push(`HOST: ${order.hostUserName}\n`);
+    // Group order info
+    if (order.lobbyId || order.isGroupOrder) {
+      commands.push(`LOBBY ID: #${order.code || order.groupOrderCode}\n`);
+      
+      // Order Type (Pickup/Dine-in)
+      const type = (order.orderType || '').toLowerCase().replace(/[_-]/g, '');
+      const orderTypeDisplay = type === 'dinein' ? 'DINE-IN' : (type === 'pickup' ? 'PICKUP' : 'N/A');
+      commands.push(`${ESC}!\x10`); // Bold
+      commands.push(`*** TYPE: ${orderTypeDisplay} ***\n`);
+      commands.push(`${ESC}!\x00`); // Normal
+      
+      // Location
+      const locationData = order.location || order.selectedLocation;
+      if (locationData) {
+        let locationText = 'N/A';
+        if (typeof locationData === 'string') {
+          locationText = locationData;
+        } else if (typeof locationData === 'object') {
+          locationText = locationData.name || locationData.label || locationData.displayName || 'N/A';
+        }
+        commands.push(`LOCATION: ${locationText}\n`);
       }
-    } else if (order.userName && order.orderType === 'carry-out') {
-      commands.push(`CUST: ${order.userName}\n`);
+      
+      // Payment Method
+      if (order.paymentMethod) {
+        const payment = order.paymentMethod === 'host-pays-all' || order.paymentMethod === 'host-pays' ? 'HOST PAYS ALL' : 'INDIVIDUAL PAYMENT';
+        commands.push(`PAYMENT: ${payment}\n`);
+      }
+      
+      if (!memberData) {
+        commands.push(`HOST: ${order.hostUserName || order.userName}\n`);
+        commands.push(`MEMBERS: ${order.memberCount || order.members?.length || 0}\n`);
+      }
+    } else {
+      if (order.tableNumber) {
+        commands.push(`TABLE: ${order.tableNumber}\n`);
+      }
+      if (order.userName && order.orderType === 'carry-out') {
+        commands.push(`CUST: ${order.userName}\n`);
+      }
     }
     
-    commands.push('========================================\n');
-    
-    // Restaurant info
-    commands.push(`${ESC}!\x10`); // Bold
-    commands.push('Zenith Certification Sdn Bhd\n');
-    commands.push(`${ESC}!\x00`); // Normal
-    commands.push('Reg: 199401032195 (317877-X)\n');
-    commands.push('Lebuh Meru Raya,\n');
-    commands.push('Bandar Meru Raya, Ipoh\n\n');
+    commands.push('\n');
     
     // Order info
     commands.push(`${ESC}a\x00`); // Left align
@@ -264,14 +326,26 @@ export class ThermalPrinterService {
               if (entree.boneType) {
                 commands.push(`  - ${entree.boneType}\n`);
               }
-              if (entree.flavor) {
+              // Only show flavor if the menu item requires it
+              if (entree.flavor && String(entree.flavor).toUpperCase() !== 'NONE' && 
+                  item.menuItem?.customizationOptions?.requiresFlavor) {
                 commands.push(`  - Flavor: ${entree.flavor}\n`);
               }
-              if (entree.dippingSauce) {
+              // Only show dipping sauce if menu item requires it
+              if (entree.dippingSauce && String(entree.dippingSauce).toUpperCase() !== 'NONE' &&
+                  item.menuItem?.customizationOptions?.requiresDippingSauce) {
                 commands.push(`  - DIP: ${entree.dippingSauce.toUpperCase()} \n`);
               }
               if (entree.friesExchange) {
                 commands.push(`  - Side: ${entree.friesExchange.name}\n\n`);
+              }
+              if (entree.drink) {
+                const drinkName = typeof entree.drink === 'string'
+                  ? entree.drink
+                  : entree.drink.displayName || entree.drink.name;
+                if (drinkName && drinkName.toUpperCase() !== 'NONE') {
+                  commands.push(`  - DRINK: ${drinkName}\n`);
+                }
               }
             });
           }
@@ -280,10 +354,14 @@ export class ThermalPrinterService {
           if (item.customization.boneType) {
             commands.push(`> ${item.customization.boneType}\n`);
           }
-          if (item.customization.flavor) {
+          // Only show flavor if menu item requires it
+          if (item.customization.flavor && String(item.customization.flavor).toUpperCase() !== 'NONE' &&
+              item.menuItem?.customizationOptions?.requiresFlavor) {
             commands.push(`> Flavor: ${item.customization.flavor}\n`);
           }
-          if (item.customization.dippingSauce) {
+          // Only show dipping sauce if menu item requires it
+          if (item.customization.dippingSauce && String(item.customization.dippingSauce).toUpperCase() !== 'NONE' &&
+              item.menuItem?.customizationOptions?.requiresDippingSauce) {
             commands.push(`> DIP: ${item.customization.dippingSauce.toUpperCase()} \n`);
           }
           if (item.customization.sideDish) {
@@ -313,7 +391,9 @@ export class ThermalPrinterService {
             const drink = typeof item.customization.drink === 'string' 
               ? item.customization.drink 
               : item.customization.drink.displayName || item.customization.drink.name;
-            commands.push(`> DRINK: ${drink}\n`);
+            if (drink && drink.toUpperCase() !== 'NONE') {
+              commands.push(`> DRINK: ${drink}\n`);
+            }
           }
           if (item.customization.specialInstructions) {
             commands.push(`> ${item.customization.specialInstructions}\n`);
@@ -326,7 +406,7 @@ export class ThermalPrinterService {
     }
     
     // Kitchen summary for individual orders or individual member receipts
-    if ((!order.lobbyId && order.items) || memberData) {
+    if ((!order.lobbyId && !order.isGroupOrder && order.items) || memberData) {
       commands.push('========================================\n');
       commands.push(`${ESC}a\x01`); // Center
       commands.push(`${ESC}!\x10`); // Bold
@@ -334,14 +414,17 @@ export class ThermalPrinterService {
       commands.push(`${ESC}!\x00`); // Normal
       commands.push(`${ESC}a\x00`); // Left
       
+      console.log('[SUMMARY DEBUG] Individual/Member receipt summary');
       const itemsForSummary = memberData ? memberData.cartItems : order.items;
+      console.log('[SUMMARY DEBUG] Items for summary:', itemsForSummary?.length || 0);
       const summary = this.generateKitchenSummary(itemsForSummary);
+      console.log('[SUMMARY DEBUG] Generated summary length:', summary.length);
       commands.push(summary);
       commands.push('========================================\n');
     }
     
     // Group order summary - match browser layout (master receipt only)
-    if (order.lobbyId && order.items && !memberData) {
+    if ((order.lobbyId || order.isGroupOrder) && !memberData) {
       commands.push('========================================\n');
       commands.push(`${ESC}a\x01`); // Center
       commands.push(`${ESC}!\x10`); // Bold
@@ -349,73 +432,37 @@ export class ThermalPrinterService {
       commands.push(`${ESC}!\x00`); // Normal
       commands.push(`${ESC}a\x00`); // Left
       
-      // Generate ingredient totals for group orders
-      const ingredientTotals: Record<string, number> = {};
-      
-      if (order.members) {
+      // Collect all items from all members
+      const allMemberItems: any[] = [];
+      if (order.members && order.members.length > 0) {
+        console.log('[SUMMARY DEBUG] Master receipt - Found members:', order.members.length);
         order.members.forEach((member: any) => {
-          member.cartItems?.forEach((item: any) => {
-            const itemQty = item.quantity || 1;
-            const kitchen = item.menuItem?.kitchenIngredients || item.kitchenIngredients;
-            const boneType = item.customization?.boneType;
-            const friesExchange = item.customization?.friesExchange;
-            const saladType = item.customization?.saladType;
-            
-            let friesReplaced = false;
-            let saladReplaced = false;
-            
-            if (kitchen?.ingredients) {
-              kitchen.ingredients.forEach((ingredient: any) => {
-                if (ingredient.requiresSelection && boneType) {
-                  // Normalize "Original" to plain ingredient name since it's the default
-                  let key;
-                  if (boneType.toLowerCase() === 'original') {
-                    key = ingredient.type;
-                  } else {
-                    key = `${boneType} ${ingredient.type}`;
-                  }
-                  ingredientTotals[key] = (ingredientTotals[key] || 0) + (ingredient.quantity * itemQty);
-                } else if (ingredient.type.toLowerCase().includes('fries') && friesExchange) {
-                  let key = friesExchange.name;
-                  if (friesExchange.selectedSize === 'jumbo') key += ' (Jumbo)';
-                  if (friesExchange.selectedFlavor) key += ` - ${friesExchange.selectedFlavor}`;
-                  ingredientTotals[key] = (ingredientTotals[key] || 0) + (ingredient.quantity * itemQty);
-                  friesReplaced = true;
-                } else if (ingredient.type.toLowerCase().includes('salad') && saladType) {
-                  ingredientTotals[saladType] = (ingredientTotals[saladType] || 0) + (ingredient.quantity * itemQty);
-                  saladReplaced = true;
-                } else {
-                  const key = ingredient.type;
-                  ingredientTotals[key] = (ingredientTotals[key] || 0) + (ingredient.quantity * itemQty);
-                }
-              });
-            }
-            
-            if (friesExchange && !friesReplaced) {
-              let key = friesExchange.name;
-              if (friesExchange.selectedSize === 'jumbo') key += ' (Jumbo)';
-              if (friesExchange.selectedFlavor) key += ` - ${friesExchange.selectedFlavor}`;
-              ingredientTotals[key] = (ingredientTotals[key] || 0) + itemQty;
-            }
-            
-            if (saladType && !saladReplaced) {
-              ingredientTotals[saladType] = (ingredientTotals[saladType] || 0) + itemQty;
-            }
-          });
+          if (member.cartItems) {
+            console.log(`[SUMMARY DEBUG] Member ${member.name}: ${member.cartItems.length} items`);
+            allMemberItems.push(...member.cartItems);
+          }
+        });
+      } else {
+        console.log('[SUMMARY DEBUG] Master receipt - NO MEMBERS FOUND', {
+          hasMembers: !!order.members,
+          membersLength: order.members?.length
         });
       }
       
-      // Print ingredient totals
-      Object.entries(ingredientTotals).forEach(([type, total]) => {
-        commands.push(`${ESC}!\x10`); // Bold
-        commands.push(`- ${total}  ${type.toUpperCase()}\n`);
-        commands.push(`${ESC}!\x00`); // Normal
-      });
+      console.log('[SUMMARY DEBUG] Total items for summary:', allMemberItems.length);
+      
+      // Use the same categorized summary as individual orders
+      const summary = this.generateKitchenSummary(allMemberItems);
+      console.log('[SUMMARY DEBUG] Generated summary length:', summary.length);
+      commands.push(summary);
       
       commands.push('=========\n');
-      const totalItems = order.items?.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0) || 0;
+      // Calculate total items from members
+      const totalItems = order.members?.reduce((sum: number, member: any) => {
+        return sum + (member.cartItems?.reduce((itemSum: number, item: any) => itemSum + (item.quantity || 1), 0) || 0);
+      }, 0) || order.totalItems || 0;
       commands.push(`TOTAL ITEMS: ${totalItems}\n`);
-      commands.push(`TOTAL PAID:  RM ${(order.total || order.totalAmount || 0).toFixed(2)}\n`);
+      commands.push(`TOTAL PAID:  RM ${(order.groupTotal || order.total || order.totalAmount || 0).toFixed(2)}\n`);
       commands.push('=========\n');
       
       // Packing distribution list
@@ -430,8 +477,9 @@ export class ThermalPrinterService {
           commands.push(`\n[BOX ${index + 1}] - ${member.name.toUpperCase()}\n`);
           
           member.cartItems?.forEach((item: any) => {
+            const itemName = item.menuItem?.name || item.menuItemName || item.name || 'ITEM';
             commands.push(`${ESC}!\x10`); // Bold
-            commands.push(`${item.quantity}x ${item.menuItemName}\n`);
+            commands.push(`${item.quantity}x ${itemName}\n`);
             commands.push(`${ESC}!\x00`); // Normal
             
             if (item.customization) {
@@ -476,7 +524,7 @@ export class ThermalPrinterService {
             }
             
             // Add spacing after every item (with or without customization)
-            commands.push('\n');
+            commands.push('\n'); 
           });
         });
       }
@@ -527,14 +575,22 @@ export class ThermalPrinterService {
     }
     
     // Footer
-    commands.push('\n');
+    commands.push('\n'); 
     commands.push(`${ESC}a\x01`); // Center
+    
+    // Company info at bottom
+    commands.push(`${ESC}!\x10`); // Bold
+    commands.push('Zenith Certification Sdn Bhd\n');
+    commands.push(`${ESC}!\x00`); // Normal
+    commands.push('Reg: 199401032195 (317877-X)\n');
+    commands.push('Lebuh Meru Raya, Bandar Meru Raya\n');
+    commands.push('Ipoh, Perak\n\n');
+    
     if (order.lobbyId && order.authCode) {
-      commands.push(`AUTH CODE: ${order.authCode}\n\n`);
-    } else {
-      commands.push('Wifi: wingzone123\n');
-      commands.push('IG/FB: Wing Zone Malaysia\n');
+      commands.push(`AUTH CODE: ${order.authCode}\n`);
     }
+    commands.push('Wifi: Wingzone123\n');
+    commands.push('IG/FB: Wing Zone Malaysia\n');
     
     // Cut paper
     commands.push('\n\n\n');
@@ -544,12 +600,40 @@ export class ThermalPrinterService {
   }
 
   private generateKitchenSummary(items: any[]): string {
+    // Helper function to normalize keys to Title Case for consistent aggregation
+    const normalizeKey = (key: string): string => {
+      let normalized = key
+        .replace(/_/g, ' ')  // Replace underscores with spaces
+        .replace(/-/g, ' ')  // Replace hyphens with spaces
+        .toLowerCase()
+        .split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+      
+      // Normalize common synonyms
+      if (normalized === 'Smiley Fries') normalized = 'Smiley';
+      if (normalized === 'Coca Cola') normalized = 'Coke';
+      
+      return normalized;
+    };
+    
     const mainItems: Record<string, number> = {};
     const sidesItems: Record<string, number> = {};
     const dippingsItems: Record<string, number> = {};
     const drinksItems: Record<string, number> = {};
     
-    items.forEach((item: any) => {
+    console.log('[KITCHEN SUMMARY] Processing items:', items.length);
+    
+    items.forEach((item: any, index: number) => {
+      console.log(`[KITCHEN SUMMARY] Item ${index}:`, {
+        name: item.menuItemName || item.name,
+        hasMenuItem: !!item.menuItem,
+        hasKitchenIngredients: !!item.kitchenIngredients,
+        menuItemHasKitchen: !!item.menuItem?.kitchenIngredients,
+        hasCustomization: !!item.customization,
+        itemKeys: Object.keys(item)
+      });
+      
       const itemQty = item.quantity || 1;
       const kitchen = item.menuItem?.kitchenIngredients || item.kitchenIngredients;
       const boneType = item.customization?.boneType;
@@ -557,75 +641,216 @@ export class ThermalPrinterService {
       const saladType = item.customization?.saladType;
       const dippingSauce = item.customization?.dippingSauce;
       const drink = item.customization?.drink;
+      const entrees = item.customization?.entrees;
+      const itemName = (item.menuItem?.name || item.menuItemName || item.name || '').toLowerCase();
+      
+      // Skip Ranch or Bleu Cheese items - they are dipping sauces, not food
+      if (itemName.includes('ranch') || itemName.includes('bleu') || itemName.includes('blue cheese')) {
+        console.log(`[KITCHEN SUMMARY] Skipping dipping sauce item: ${itemName}`);
+        return;
+      }
+      
+      console.log(`[KITCHEN SUMMARY] Item ${index} extracted data:`, {
+        kitchen: !!kitchen,
+        ingredientsCount: kitchen?.ingredients?.length || 0,
+        hasEntrees: !!entrees,
+        entreesCount: entrees?.length || 0
+      });
       
       let friesReplaced = false;
       let saladReplaced = false;
+      let isComboItem = false;
       
-      if (kitchen?.ingredients) {
+      // Check if this item has kitchen ingredients from menu database
+      const hasKitchenIngredients = kitchen?.ingredients && kitchen.ingredients.length > 0;
+      
+      // Process items using kitchen ingredients from menu database (preferred method)
+      if (hasKitchenIngredients) {
+        console.log(`[KITCHEN SUMMARY] Processing "${itemName}" with ${kitchen.ingredients.length} ingredients`);
+        
         kitchen.ingredients.forEach((ingredient: any) => {
+          console.log(`[KITCHEN SUMMARY] Ingredient:`, ingredient);
+          
           const lower = ingredient.type.toLowerCase();
           let key = ingredient.type;
           let qty = ingredient.quantity * itemQty;
           
-          // Main items (wings, tenders)
-          if (ingredient.requiresSelection && boneType) {
-            // Normalize "Original" to plain ingredient name since it's the default
-            if (boneType.toLowerCase() === 'original') {
-              key = ingredient.type;
+          // FIRST: Strip ALL flavors from ALL ingredient types
+          key = key.replace(/\s*-\s*.+$/, '').trim();
+          
+          console.log(`[KITCHEN SUMMARY] Ingredient type: "${ingredient.type}" -> cleaned: "${key}", qty: ${qty}`);
+          
+          // Handle bone type ingredients stored as types (boneless/original as standalone)
+          if (lower === 'boneless' || lower === 'original') {
+            // These are bone types stored as ingredient types - treat as wings
+            if (lower === 'boneless') {
+              key = 'Boneless Wings';
             } else {
-              key = `${boneType} ${ingredient.type}`;
+              key = 'Wings';
             }
-            mainItems[key] = (mainItems[key] || 0) + qty;
-          } else if (lower.includes('wings') || lower.includes('tenders')) {
-            mainItems[key] = (mainItems[key] || 0) + qty;
+            console.log(`[KITCHEN SUMMARY] Converted bone type to wings: "${key}" = ${qty}`);
+            mainItems[normalizeKey(key)] = (mainItems[normalizeKey(key)] || 0) + qty;
           }
-          // Sides (fries, salad, chips, rice, etc.)
-          else if (lower.includes('fries')) {
+          // MAIN ITEMS: Proteins (wings, tenders, chicken, beef) - but NOT rice/salad/veggie combos or dipping sauces
+          else if ((lower.includes('wings') || lower.includes('tender') || 
+                    lower.includes('grill chicken') || lower.includes('grilled chicken') ||
+                    (lower.includes('beef') && !lower.includes('rice') && !lower.includes('veggie'))) &&
+                   !lower.includes('rice') && !lower.includes('salad') && !lower.includes('veggie') &&
+                   !lower.includes('ranch') && !lower.includes('bleu') && !lower.includes('blue cheese')) {
+            // Get bone type from customization ONLY for wings/tenders
+            if (lower.includes('wings') || lower.includes('tender')) {
+              const itemBoneType = boneType || (entrees && entrees[0]?.boneType);
+              
+              // Add bone type prefix if present and not "Original"
+              if (itemBoneType && itemBoneType.toLowerCase() !== 'original') {
+                key = `${itemBoneType} ${key}`;
+              }
+            }
+            
+            console.log(`[KITCHEN SUMMARY] Adding to MAIN: "${key}" = ${qty}`);
+            mainItems[normalizeKey(key)] = (mainItems[normalizeKey(key)] || 0) + qty;
+          }
+          // Fries and their substitutions
+          else if (lower.includes('fries') || lower.includes('wedge')) {
             if (friesExchange) {
               key = friesExchange.name;
               if (friesExchange.selectedSize === 'jumbo') key += ' (Jumbo)';
               if (friesExchange.selectedFlavor) key += ` - ${friesExchange.selectedFlavor}`;
               friesReplaced = true;
             }
-            sidesItems[key] = (sidesItems[key] || 0) + qty;
-          } else if (lower.includes('salad')) {
+            sidesItems[normalizeKey(key)] = (sidesItems[normalizeKey(key)] || 0) + qty;
+          }
+          // Salads
+          else if (lower.includes('salad') || lower.includes('caesar')) {
             if (saladType) {
               key = saladType;
               saladReplaced = true;
             }
-            sidesItems[key] = (sidesItems[key] || 0) + qty;
-          } else if (lower.includes('chips') || lower.includes('rice') || lower.includes('stix') || lower.includes('mozzarella') || lower.includes('veggie')) {
-            sidesItems[key] = (sidesItems[key] || 0) + qty;
+            sidesItems[normalizeKey(key)] = (sidesItems[normalizeKey(key)] || 0) + qty;
           }
-          // Everything else goes to main by default
-          else {
-            mainItems[key] = (mainItems[key] || 0) + qty;
+          // All other sides: rice, veggies, chips, smiley, potato, etc.
+          else if (lower.includes('rice') || lower.includes('veggie') || 
+                   lower.includes('chips') || lower.includes('chip') || lower.includes('stix') || 
+                   lower.includes('mozzarella') || lower.includes('smiley') || lower.includes('potato') ||
+                   lower.includes('drumstick')) {
+            sidesItems[normalizeKey(key)] = (sidesItems[normalizeKey(key)] || 0) + qty;
           }
         });
+        
+        // Process dipping sauces from entrees (for combos) or main item
+        if (entrees && entrees.length > 0) {
+          entrees.forEach((entree: any) => {
+            if (entree.dippingSauce) {
+              const sauceName = typeof entree.dippingSauce === 'string'
+                ? entree.dippingSauce
+                : entree.dippingSauce.displayName || entree.dippingSauce.name || entree.dippingSauce;
+              if (sauceName && String(sauceName).toUpperCase() !== 'NONE') {
+                const normalizedSauce = normalizeKey(sauceName);
+                dippingsItems[normalizedSauce] = (dippingsItems[normalizedSauce] || 0) + itemQty;
+              }
+            }
+          });
+        } else if (dippingSauce) {
+          const sauceName = typeof dippingSauce === 'string' ? dippingSauce : dippingSauce.displayName || dippingSauce.name || dippingSauce;
+          if (sauceName && String(sauceName).toUpperCase() !== 'NONE') {
+            const normalizedSauce = normalizeKey(sauceName);
+            dippingsItems[normalizedSauce] = (dippingsItems[normalizedSauce] || 0) + itemQty;
+          }
+        }
+        
+        // Add side substitutions that weren't replaced
+        if (friesExchange && !friesReplaced) {
+          let key = friesExchange.name;
+          if (friesExchange.selectedSize === 'jumbo') key += ' (Jumbo)';
+          if (friesExchange.selectedFlavor) key += ` - ${friesExchange.selectedFlavor}`;
+          sidesItems[key] = (sidesItems[key] || 0) + itemQty;
+        }
+        
+        if (saladType && !saladReplaced) {
+          sidesItems[saladType] = (sidesItems[saladType] || 0) + itemQty;
+        }
+        
+        // Add drinks for items with kitchen ingredients
+        if (drink) {
+          const drinkName = drink.displayName || drink.name || drink;
+          if (drinkName && String(drinkName).toUpperCase() !== 'NONE') {
+            const normalizedDrink = normalizeKey(drinkName);
+            drinksItems[normalizedDrink] = (drinksItems[normalizedDrink] || 0) + itemQty;
+          }
+        }
       }
-      
-      // Add side substitutions even if no ingredient to replace
-      if (friesExchange && !friesReplaced) {
-        let key = friesExchange.name;
-        if (friesExchange.selectedSize === 'jumbo') key += ' (Jumbo)';
-        if (friesExchange.selectedFlavor) key += ` - ${friesExchange.selectedFlavor}`;
-        sidesItems[key] = (sidesItems[key] || 0) + itemQty;
-      }
-      
-      if (saladType && !saladReplaced) {
-        sidesItems[saladType] = (sidesItems[saladType] || 0) + itemQty;
-      }
-      
-      // Add dipping sauces
-      if (dippingSauce) {
-        const sauceName = typeof dippingSauce === 'string' ? dippingSauce : dippingSauce.name || dippingSauce;
-        dippingsItems[sauceName] = (dippingsItems[sauceName] || 0) + itemQty;
-      }
-      
-      // Add drinks
-      if (drink) {
-        const drinkName = drink.displayName || drink.name || drink;
-        drinksItems[drinkName] = (drinksItems[drinkName] || 0) + itemQty;
+      // Fallback: No kitchen ingredients - categorize by item name
+      else {
+        console.log(`[KITCHEN SUMMARY] No kitchen ingredients for item: ${itemName}, using name-based categorization`);
+        
+        // Skip if this is just a bone type or entree label (not actual food)
+        const skipTerms = ['entree', 'combo', 'meal'];
+        const shouldSkip = skipTerms.some(term => itemName.toLowerCase().includes(term) && 
+                                                   !itemName.toLowerCase().includes('wings') && 
+                                                   !itemName.toLowerCase().includes('tender'));
+        
+        if (shouldSkip) {
+          console.log(`[KITCHEN SUMMARY] Skipping entree label: ${itemName}`);
+        }
+        // Categorize wings/tenders
+        else if (itemName.includes('wings') || itemName.includes('tender') || itemName.includes('chicken')) {
+          let key = item.menuItem?.name || item.menuItemName || item.name;
+          // Strip flavor from name
+          key = key.replace(/\s*-\s*.+$/, '').trim();
+          
+          // Try to get actual wing count from item data
+          const wingCount = item.menuItem?.defaultQuantity || item.defaultQuantity || itemQty;
+          
+          // Add bone type if present and not "Original"
+          if (boneType && boneType.toLowerCase() !== 'original') {
+            key = `${boneType} ${key}`;
+          }
+          mainItems[key] = (mainItems[key] || 0) + wingCount;
+        }
+        // Drinks
+        else if (itemName.includes('coke') || itemName.includes('sprite') || itemName.includes('tea') || 
+                 itemName.includes('juice') || itemName.includes('water') || itemName.includes('drink')) {
+          const key = item.menuItem?.name || item.menuItemName || item.name;
+          const normalizedDrink = normalizeKey(key);
+          drinksItems[normalizedDrink] = (drinksItems[normalizedDrink] || 0) + itemQty;
+        }
+        // Sides
+        else if (itemName.includes('fries') || itemName.includes('rice') || itemName.includes('veggie') ||
+                 itemName.includes('chips') || itemName.includes('salad') || itemName.includes('stix') ||
+                 itemName.includes('mozzarella')) {
+          const key = item.menuItem?.name || item.menuItemName || item.name;
+          sidesItems[key] = (sidesItems[key] || 0) + itemQty;
+        }
+        // Default to main
+        else {
+          const key = item.menuItem?.name || item.menuItemName || item.name;
+          if (key) {
+            mainItems[key] = (mainItems[key] || 0) + itemQty;
+          }
+        }
+        
+        // Still add customizations even without kitchen ingredients
+        if (dippingSauce) {
+          const sauceName = typeof dippingSauce === 'string' ? dippingSauce : dippingSauce.displayName || dippingSauce.name || dippingSauce;
+          if (sauceName && String(sauceName).toUpperCase() !== 'NONE') {
+            const normalizedSauce = normalizeKey(sauceName);
+            dippingsItems[normalizedSauce] = (dippingsItems[normalizedSauce] || 0) + itemQty;
+          }
+        }
+        
+        if (drink) {
+          const drinkName = drink.displayName || drink.name || drink;
+          if (drinkName && String(drinkName).toUpperCase() !== 'NONE') {
+            drinksItems[drinkName] = (drinksItems[drinkName] || 0) + itemQty;
+          }
+        }
+        
+        if (friesExchange) {
+          let key = friesExchange.name;
+          if (friesExchange.selectedSize === 'jumbo') key += ' (Jumbo)';
+          if (friesExchange.selectedFlavor) key += ` - ${friesExchange.selectedFlavor}`;
+          sidesItems[key] = (sidesItems[key] || 0) + itemQty;
+        }
       }
     });
     
