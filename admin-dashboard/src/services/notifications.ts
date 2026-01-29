@@ -1,6 +1,7 @@
-import { collection, addDoc, Timestamp, query, where, onSnapshot, Unsubscribe, orderBy, limit, doc, getDoc } from 'firebase/firestore';
+import { collection, addDoc, Timestamp, query, where, onSnapshot, orderBy, limit, doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { printService, GroupOrderForPrint } from './printService';
+import { printService } from './printService';
+import type { GroupOrderForPrint } from './printService';
 
 export interface NotificationData {
   type: 'order' | 'system' | 'info';
@@ -28,7 +29,7 @@ export interface NotificationSoundSettings {
 
 class NotificationService {
   private notificationsRef = collection(db, 'notifications');
-  private orderListener: Unsubscribe | null = null;
+  private orderListener: (() => void) | null = null;
   private lastOrderTimestamp: Date | null = null;
   private audioContext: AudioContext | null = null;
   private hasPlayedSound = false;
@@ -268,8 +269,21 @@ class NotificationService {
             const isGroupOrder = orderData.isGroupOrder === true;
             const orderId = change.doc.id.substring(0, 8).toUpperCase();
             const customerName = orderData.userName || orderData.hostUserName || 'Customer';
-            const total = orderData.total || 0;
-            const itemCount = orderData.items?.length || 0;
+            const total = orderData.total || orderData.groupTotal || 0;
+            
+            // Calculate item count based on order type
+            let itemCount = 0;
+            if (isGroupOrder && orderData.members) {
+              // For group orders, count items from all members
+              itemCount = orderData.members.reduce((sum: number, member: any) => {
+                return sum + (member.cartItems?.reduce((cartSum: number, item: any) => {
+                  return cartSum + (item.quantity || 1);
+                }, 0) || 0);
+              }, 0);
+            } else {
+              // For individual orders, count from items array
+              itemCount = orderData.items?.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0) || 0;
+            }
 
             const title = isGroupOrder ? '🍗 New Group Order!' : '🍗 New Order Received!';
             const message = `${customerName} • ${itemCount} items • RM ${total.toFixed(2)}`;
@@ -407,18 +421,26 @@ class NotificationService {
           id: orderId,
           groupName: orderData.groupName || 'Group Order',
           hostUserName: orderData.hostUserName || 'Host',
-          participants: (orderData.participants || []).map((p: any) => ({
+          participants: (orderData.members || orderData.participants || []).map((p: any) => ({
             userId: p.userId,
-            userName: p.userName,
-            items: p.items || [],
-            total: p.total || 0
+            userName: p.userName || p.name,
+            items: p.cartItems || p.items || [],
+            total: p.total || (p.cartItems || []).reduce((sum: number, item: any) => sum + (item.subtotal || 0), 0)
           })),
           orderDate: orderData.createdAt?.toDate() || new Date(),
-          total: orderData.total || 0
+          total: orderData.total || (orderData.members || []).reduce((sum: number, m: any) => 
+            sum + (m.cartItems || []).reduce((itemSum: number, item: any) => 
+              itemSum + (item.subtotal || 0), 0
+            ), 0
+          ),
+          orderType: orderData.orderType,
+          location: orderData.location || orderData.selectedLocation,
+          paymentMethod: orderData.paymentMethod
         };
 
+        console.log(`Auto-printing 1 MASTER + ${groupOrderForPrint.participants.length} MEMBER receipts for group order ${orderId.substring(0, 8)}`);
         await printService.printGroupOrderReceipts(groupOrderForPrint, undefined, printerName);
-        console.log(`Auto-printed receipts for group order ${orderId.substring(0, 8)}`);
+        console.log(`✓ Auto-printed all receipts for group order ${orderId.substring(0, 8)}`);
       } else {
         console.log(`Individual order ${orderId.substring(0, 8)}: Browser auto-print not supported for individual orders. Use QZ Tray.`);
       }

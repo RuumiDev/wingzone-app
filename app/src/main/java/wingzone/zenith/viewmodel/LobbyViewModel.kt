@@ -14,12 +14,15 @@ import kotlinx.coroutines.tasks.await
 import wingzone.zenith.data.repository.IAuthRepository
 import wingzone.zenith.data.repository.RepositoryProvider
 import wingzone.zenith.ui.screens.Location
+import wingzone.zenith.data.models.GroupOrderStatus
 import java.util.*
 import kotlin.random.Random
 
 class LobbyViewModel(
     application: Application,
-    private val authRepository: IAuthRepository = RepositoryProvider.getAuthRepository()
+    private val authRepository: IAuthRepository = RepositoryProvider.getAuthRepository(),
+    private val cartRepository: wingzone.zenith.data.repository.CartRepository = RepositoryProvider.getCartRepository(),
+    private val groupOrderViewModel: GroupOrderViewModel? = null
 ) : AndroidViewModel(application) {
     
     private val firestore = FirebaseFirestore.getInstance()
@@ -34,8 +37,24 @@ class LobbyViewModel(
     private val _shouldShowDisclaimer = MutableStateFlow(true)
     val shouldShowDisclaimer: StateFlow<Boolean> = _shouldShowDisclaimer.asStateFlow()
     
+    private val _currentLobbyId = MutableStateFlow<String?>(null)
+    val currentLobbyId: StateFlow<String?> = _currentLobbyId.asStateFlow()
+    
     init {
         checkDisclaimerStatus()
+        startCartSyncListener()
+    }
+    
+    // Continuously sync cart to lobby when changes occur
+    private fun startCartSyncListener() {
+        viewModelScope.launch {
+            cartRepository.cart.collect { cart ->
+                val lobbyId = _currentLobbyId.value
+                if (lobbyId != null && cart.items.isNotEmpty()) {
+                    syncCartToLobby(lobbyId)
+                }
+            }
+        }
     }
     
     private fun checkDisclaimerStatus() {
@@ -134,6 +153,7 @@ class LobbyViewModel(
                             "cartItems" to arrayListOf<Any>(),
                             "total" to 0.0,
                             "status" to "ordering",
+                            "hasPaid" to false,
                             "isHost" to true
                         )
                     ),
@@ -146,6 +166,10 @@ class LobbyViewModel(
                 val docRef = firestore.collection("lobbies")
                     .add(lobbyData)
                     .await()
+                
+                // Set current lobby and update GroupOrderViewModel
+                _currentLobbyId.value = docRef.id
+                loadLobbyAsGroupOrder(docRef.id)
                 
                 onResult(Result.success(docRef.id))
             } catch (e: Exception) {
@@ -188,7 +212,8 @@ class LobbyViewModel(
                 }
                 
                 if (alreadyMember) {
-                    // Already in lobby, just navigate there
+                    // Already in lobby, sync cart to lobby again
+                    syncCartToLobby(lobbyId)
                     onResult(Result.success(lobbyId))
                     return@launch
                 }
@@ -199,20 +224,64 @@ class LobbyViewModel(
                     throw Exception("This lobby is full (max $maxMembers members).")
                 }
                 
-                // Add user to members
+                // Sync current cart to lobby
+                val currentCart = cartRepository.cart.value
+                val serializedCartItems = currentCart.items.map { cartItem ->
+                    hashMapOf<String, Any?>(
+                        "id" to cartItem.id,
+                        "menuItem" to hashMapOf(
+                            "id" to cartItem.menuItem.id,
+                            "name" to cartItem.menuItem.name,
+                            "description" to cartItem.menuItem.description,
+                            "price" to cartItem.menuItem.price,
+                            "category" to cartItem.menuItem.category,
+                            "imageUrl" to (cartItem.menuItem.imageUrl ?: ""),
+                            "isAvailable" to cartItem.menuItem.isAvailable,
+                            "requiresCustomization" to cartItem.menuItem.requiresCustomization
+                        ),
+                        "quantity" to cartItem.quantity,
+                        "customization" to if (cartItem.customization != null) {
+                            hashMapOf<String, Any?>(
+                                "flavor" to cartItem.customization.flavor.name,
+                                "dippingSauce" to cartItem.customization.dippingSauce.name,
+                                "drink" to cartItem.customization.drink.name,
+                                "boneType" to cartItem.customization.boneType?.name,
+                                "friesExchange" to cartItem.customization.friesExchange?.let { exchange ->
+                                    hashMapOf(
+                                        "name" to exchange.name,
+                                        "regularPrice" to exchange.regularPrice,
+                                        "jumboPrice" to exchange.jumboPrice,
+                                        "selectedSize" to exchange.selectedSize,
+                                        "selectedFlavor" to exchange.selectedFlavor
+                                    )
+                                },
+                                "saladType" to cartItem.customization.saladType
+                            )
+                        } else null,
+                        "specialInstructions" to (cartItem.specialInstructions ?: ""),
+                        "subtotal" to cartItem.subtotal
+                    )
+                }
+                
                 val newMember = hashMapOf(
                     "userId" to currentUser.id,
                     "userName" to currentUser.name,
                     "joinedAt" to Date(),
-                    "cartItems" to arrayListOf<Any>(),
-                    "total" to 0.0,
+                    "cartItems" to serializedCartItems,
+                    "total" to currentCart.total,
                     "status" to "ordering",
+                    "hasPaid" to false,
                     "isHost" to false
                 )
                 
                 firestore.collection("lobbies").document(lobbyId)
                     .update("members", com.google.firebase.firestore.FieldValue.arrayUnion(newMember))
                     .await()
+                
+                // Set current lobby and update GroupOrderViewModel
+                _currentLobbyId.value = lobbyId
+                android.util.Log.d("LobbyViewModel", "joinLobby: Setting currentLobbyId to $lobbyId, calling loadLobbyAsGroupOrder")
+                loadLobbyAsGroupOrder(lobbyId)
                 
                 onResult(Result.success(lobbyId))
             } catch (e: Exception) {
@@ -260,6 +329,246 @@ class LobbyViewModel(
         } catch (e: Exception) {
             e.printStackTrace()
             emptyList()
+        }
+    }
+    
+    // Helper function to load lobby and set as current group order
+    private fun loadLobbyAsGroupOrder(lobbyId: String) {
+        android.util.Log.d("LobbyViewModel", "loadLobbyAsGroupOrder called for lobbyId: $lobbyId, groupOrderViewModel is null: ${groupOrderViewModel == null}")
+        viewModelScope.launch {
+            try {
+                val lobbyDoc = firestore.collection("lobbies").document(lobbyId).get().await()
+                if (lobbyDoc.exists()) {
+                    val code = lobbyDoc.getString("code") ?: ""
+                    val hostUserId = lobbyDoc.getString("hostUserId") ?: ""
+                    val paymentMethod = lobbyDoc.getString("paymentMethod") ?: "individual"
+                    val expiresAtTimestamp = lobbyDoc.getTimestamp("expiresAt")
+                    val expiresAt = expiresAtTimestamp?.toDate() ?: Date(System.currentTimeMillis() + 3600000) // 1 hour default
+                    
+                    android.util.Log.d("LobbyViewModel", "Creating GroupOrder: id=$lobbyId, code=$code, paymentMethod=$paymentMethod")
+                    
+                    // Create a GroupOrder from lobby data
+                    val groupOrder = wingzone.zenith.data.models.GroupOrder(
+                        id = lobbyId,
+                        code = code,
+                        hostId = hostUserId,
+                        status = GroupOrderStatus.OPEN,
+                        members = emptyList(), // Will be populated by repository
+                        createdAt = Date(),
+                        expiresAt = expiresAt,
+                        paymentMethod = paymentMethod
+                    )
+                    
+                    android.util.Log.d("LobbyViewModel", "Calling setCurrentGroupOrder with groupOrder.id=${groupOrder.id}")
+                    groupOrderViewModel?.setCurrentGroupOrder(groupOrder)
+                    android.util.Log.d("LobbyViewModel", "setCurrentGroupOrder completed")
+                } else {
+                    android.util.Log.w("LobbyViewModel", "Lobby document does not exist for id: $lobbyId")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("LobbyViewModel", "Failed to load lobby as group order", e)
+            }
+        }
+    }
+    
+    // Helper function to sync current cart to lobby
+    private suspend fun syncCartToLobby(lobbyId: String) {
+        try {
+            val currentUser = authRepository.getCurrentUser() ?: return
+            val currentCart = cartRepository.cart.value
+            
+            val serializedCartItems = currentCart.items.map { cartItem ->
+                hashMapOf<String, Any?>(
+                    "id" to cartItem.id,
+                    "menuItem" to hashMapOf(
+                        "id" to cartItem.menuItem.id,
+                        "name" to cartItem.menuItem.name,
+                        "description" to cartItem.menuItem.description,
+                        "price" to cartItem.menuItem.price,
+                        "category" to cartItem.menuItem.category,
+                        "imageUrl" to (cartItem.menuItem.imageUrl ?: ""),
+                        "isAvailable" to cartItem.menuItem.isAvailable,
+                        "requiresCustomization" to cartItem.menuItem.requiresCustomization
+                    ),
+                    "quantity" to cartItem.quantity,
+                    "customization" to if (cartItem.customization != null) {
+                        hashMapOf(
+                            "flavor" to cartItem.customization!!.flavor.displayName,
+                            "dippingSauce" to cartItem.customization!!.dippingSauce.displayName,
+                            "drink" to cartItem.customization!!.drink.displayName,
+                            "boneType" to cartItem.customization!!.boneType?.name,
+                            "friesExchange" to if (cartItem.customization!!.friesExchange != null) {
+                                hashMapOf(
+                                    "name" to cartItem.customization!!.friesExchange!!.name,
+                                    "selectedSize" to cartItem.customization!!.friesExchange!!.selectedSize,
+                                    "selectedFlavor" to (cartItem.customization!!.friesExchange!!.selectedFlavor ?: "")
+                                )
+                            } else null
+                        )
+                    } else null,
+                    "subtotal" to cartItem.subtotal
+                )
+            }
+            
+            // Update member's cart in lobby
+            val lobbyDoc = firestore.collection("lobbies").document(lobbyId).get().await()
+            val members = lobbyDoc.get("members") as? MutableList<MutableMap<String, Any>> ?: mutableListOf()
+            val memberIndex = members.indexOfFirst { it["userId"] == currentUser.id }
+            
+            if (memberIndex >= 0) {
+                members[memberIndex]["cartItems"] = serializedCartItems
+                members[memberIndex]["total"] = currentCart.total
+                
+                firestore.collection("lobbies").document(lobbyId)
+                    .update("members", members)
+                    .await()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("LobbyViewModel", "Failed to sync cart to lobby", e)
+        }
+    }
+    
+    // Mark user as paid in lobby
+    fun markAsPaid(lobbyId: String, userId: String, onResult: (Result<Unit>) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val lobbyDoc = firestore.collection("lobbies").document(lobbyId).get().await()
+                if (!lobbyDoc.exists()) throw Exception("Lobby not found")
+                
+                @Suppress("UNCHECKED_CAST")
+                val members = lobbyDoc.get("members") as? List<Map<String, Any>> ?: emptyList()
+                val updatedMembers = members.map { member ->
+                    if (member["userId"] == userId) {
+                        member.toMutableMap().apply {
+                            put("hasPaid", true)
+                            put("status", "paid")
+                        }
+                    } else {
+                        member
+                    }
+                }
+                
+                firestore.collection("lobbies").document(lobbyId)
+                    .update("members", updatedMembers)
+                    .await()
+                
+                onResult(Result.success(Unit))
+            } catch (e: Exception) {
+                e.printStackTrace()
+                onResult(Result.failure(e))
+            }
+        }
+    }
+    
+    // Submit order (host only, when all paid or host-pays-all)
+    fun submitOrder(lobbyId: String, onResult: (Result<String>) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val lobbyDoc = firestore.collection("lobbies").document(lobbyId).get().await()
+                if (!lobbyDoc.exists()) throw Exception("Lobby not found")
+                
+                val lobbyData = lobbyDoc.data ?: throw Exception("Invalid lobby data")
+                val currentUser = authRepository.getCurrentUser() ?: throw Exception("Not authenticated")
+                
+                // Verify user is host
+                if (lobbyData["hostUserId"] != currentUser.id) {
+                    throw Exception("Only the host can submit the order")
+                }
+                
+                val paymentMethod = lobbyData["paymentMethod"] as? String ?: "individual"
+                @Suppress("UNCHECKED_CAST")
+                val members = lobbyData["members"] as? List<Map<String, Any>> ?: emptyList()
+                
+                // Check if all members have paid (except for host-pays-all)
+                if (paymentMethod != "host-pays-all") {
+                    val allPaid = members.all { (it["hasPaid"] as? Boolean) ?: false }
+                    if (!allPaid) {
+                        throw Exception("All members must pay before submitting the order")
+                    }
+                }
+                
+                // Calculate group total
+                val groupTotal = members.sumOf { (it["total"] as? Number)?.toDouble() ?: 0.0 }
+                val totalItems = members.sumOf { member ->
+                    val cartItems = member["cartItems"] as? List<*>
+                    cartItems?.sumOf { item ->
+                        ((item as? Map<String, Any>)?.get("quantity") as? Number)?.toInt() ?: 0
+                    } ?: 0
+                }
+                
+                // Create main group order in orders collection
+                val groupOrderData = hashMapOf(
+                    "isGroupOrder" to true,
+                    "lobbyId" to lobbyId,
+                    "code" to lobbyData["code"],
+                    "orderType" to (lobbyData["orderType"] ?: "pickup"),
+                    "location" to lobbyData["location"],
+                    "paymentMethod" to paymentMethod,
+                    "hostUserId" to lobbyData["hostUserId"],
+                    "hostUserName" to lobbyData["hostUserName"],
+                    "members" to members,
+                    "memberCount" to members.size,
+                    "groupTotal" to groupTotal,
+                    "subtotal" to groupTotal * 0.94, // Approximate subtotal (6% tax)
+                    "tax" to groupTotal * 0.06,
+                    "total" to groupTotal,
+                    "totalItems" to totalItems,
+                    "status" to "pending",
+                    "paymentStatus" to "paid",
+                    "createdAt" to Date(),
+                    "estimatedTime" to 30, // 30 minutes default
+                    "userId" to currentUser.id,
+                    "userName" to currentUser.name
+                )
+                
+                val groupOrderRef = firestore.collection("orders").add(groupOrderData).await()
+                
+                // Update lobby status
+                firestore.collection("lobbies").document(lobbyId)
+                    .update(mapOf(
+                        "status" to "submitted",
+                        "orderId" to groupOrderRef.id,
+                        "submittedAt" to Date()
+                    ))
+                    .await()
+                
+                // Clear carts for all members
+                members.forEach { member ->
+                    val userId = member["userId"] as? String
+                    if (userId != null) {
+                        try {
+                            firestore.collection("carts").document(userId)
+                                .set(hashMapOf(
+                                    "items" to emptyList<Any>(),
+                                    "lastUpdated" to Date()
+                                ))
+                                .await()
+                        } catch (e: Exception) {
+                            android.util.Log.e("LobbyViewModel", "Failed to clear cart for user $userId", e)
+                        }
+                    }
+                }
+                
+                // Clear local state
+                _currentLobbyId.value = null
+                groupOrderViewModel?.clearCurrentGroupOrder()
+                
+                // Delete the lobby after a short delay (to allow final reads)
+                viewModelScope.launch {
+                    kotlinx.coroutines.delay(2000) // 2 second delay
+                    try {
+                        firestore.collection("lobbies").document(lobbyId).delete().await()
+                        android.util.Log.d("LobbyViewModel", "Lobby $lobbyId deleted successfully")
+                    } catch (e: Exception) {
+                        android.util.Log.e("LobbyViewModel", "Failed to delete lobby $lobbyId", e)
+                    }
+                }
+                
+                onResult(Result.success(groupOrderRef.id))
+            } catch (e: Exception) {
+                e.printStackTrace()
+                onResult(Result.failure(e))
+            }
         }
     }
 }

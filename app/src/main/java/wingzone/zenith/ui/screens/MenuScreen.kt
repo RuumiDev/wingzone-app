@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import wingzone.zenith.data.models.MenuItem
+import wingzone.zenith.ui.components.SimpleItemBottomSheet
 import wingzone.zenith.ui.theme.*
 import wingzone.zenith.viewmodel.AuthViewModel
 import wingzone.zenith.viewmodel.CartViewModel
@@ -45,9 +46,11 @@ fun MenuScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var showCustomizationDialog by remember { mutableStateOf(false) }
+    var showSimpleItemSheet by remember { mutableStateOf(false) }
     var selectedMenuItem by remember { mutableStateOf<MenuItem?>(null) }
     val cart by cartViewModel.cart.collectAsState()
     val isAuthenticated = authViewModel.isAuthenticated()
+    var userHasPaid by remember { mutableStateOf(false) }
     
     Scaffold(
         topBar = {
@@ -167,12 +170,19 @@ fun MenuScreen(
                                 onAuthRequired()
                                 return@MenuContent
                             }
+                            android.util.Log.d("MenuScreen", "Item clicked: ${menuItem.name}")
+                            android.util.Log.d("MenuScreen", "requiresCustomization: ${menuItem.requiresCustomization}")
                             selectedMenuItem = menuItem
                             if (menuItem.requiresCustomization) {
+                                android.util.Log.d("MenuScreen", "Setting showCustomizationDialog = true")
+                                showSimpleItemSheet = false
                                 showCustomizationDialog = true
                             } else {
-                                cartViewModel.addItem(menuItem, 1)
+                                android.util.Log.d("MenuScreen", "Setting showSimpleItemSheet = true")
+                                showCustomizationDialog = false
+                                showSimpleItemSheet = true
                             }
+                            android.util.Log.d("MenuScreen", "showSimpleItemSheet: $showSimpleItemSheet, showCustomizationDialog: $showCustomizationDialog")
                         }
                     )
                     }
@@ -226,12 +236,19 @@ fun MenuScreen(
                                 onAuthRequired()
                                 return@MenuContent
                             }
+                            // DEBUG: Log item selection
+                            android.util.Log.d("MenuScreen", "Item clicked: ${menuItem.name}, requiresCustomization: ${menuItem.requiresCustomization}")
                             selectedMenuItem = menuItem
                             if (menuItem.requiresCustomization) {
+                                android.util.Log.d("MenuScreen", "Showing customization dialog")
+                                showSimpleItemSheet = false
                                 showCustomizationDialog = true
                             } else {
-                                cartViewModel.addItem(menuItem, 1)
+                                android.util.Log.d("MenuScreen", "Showing simple item sheet")
+                                showCustomizationDialog = false
+                                showSimpleItemSheet = true
                             }
+                            android.util.Log.d("MenuScreen", "showSimpleItemSheet: $showSimpleItemSheet, showCustomizationDialog: $showCustomizationDialog")
                         }
                     )
                 }
@@ -242,12 +259,38 @@ fun MenuScreen(
         if (showCustomizationDialog && selectedMenuItem != null) {
             EntreeCustomizationDialog(
                 menuItem = selectedMenuItem!!,
-                onDismiss = { showCustomizationDialog = false },
+                onDismiss = { 
+                    showCustomizationDialog = false
+                    selectedMenuItem = null
+                },
                 onConfirm = { quantity, customization ->
                     cartViewModel.addItem(selectedMenuItem!!, quantity, customization)
                     showCustomizationDialog = false
+                    selectedMenuItem = null
+                },
+                userHasPaid = userHasPaid
+            )
+        }
+        
+        // Simple Item Bottom Sheet
+        if (showSimpleItemSheet && selectedMenuItem != null) {
+            android.util.Log.d("MenuScreen", "RENDERING SimpleItemBottomSheet for ${selectedMenuItem?.name}")
+            SimpleItemBottomSheet(
+                menuItem = selectedMenuItem!!,
+                onDismiss = { 
+                    android.util.Log.d("MenuScreen", "SimpleItemBottomSheet dismissed")
+                    showSimpleItemSheet = false
+                    selectedMenuItem = null
+                },
+                onAddToCart = { quantity ->
+                    android.util.Log.d("MenuScreen", "Adding ${selectedMenuItem?.name} to cart, quantity: $quantity")
+                    cartViewModel.addItem(selectedMenuItem!!, quantity)
+                    showSimpleItemSheet = false
+                    selectedMenuItem = null
                 }
             )
+        } else {
+            android.util.Log.d("MenuScreen", "SimpleItemBottomSheet NOT shown - showSimpleItemSheet: $showSimpleItemSheet, selectedMenuItem: ${selectedMenuItem?.name}")
         }
         
         // Cart Floating Action Button
@@ -470,7 +513,7 @@ fun MenuItemCard(
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary,
-                        maxLines = 2,
+                        maxLines = 3,
                         overflow = TextOverflow.Ellipsis
                     )
                     
@@ -480,7 +523,7 @@ fun MenuItemCard(
                             text = item.description,
                             fontSize = 11.sp,
                             color = TextSecondary,
-                            maxLines = 2,
+                            maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
                             lineHeight = 14.sp
                         )

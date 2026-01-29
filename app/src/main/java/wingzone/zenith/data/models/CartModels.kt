@@ -51,7 +51,7 @@ enum class DippingSauce(val displayName: String) {
 }
 
 enum class Drink(val displayName: String) {
-    COCA_COLA("Coca-Cola"),
+    COCA_COLA("Coke"),
     COKE_ZERO("Coke Zero"),
     SPRITE("Sprite"),
     ICED_LEMON_TEA("Iced Lemon Tea"),
@@ -114,6 +114,7 @@ data class CustomizationOptions(
     val requiresDippingSauce: Boolean = false,
     val requiresBoneType: Boolean = false,
     val allowFriesExchange: Boolean = false,
+    val requiresSaladChoice: Boolean = false,
     val availableFlavors: List<String> = emptyList(),
     val availableBeverages: List<String> = emptyList(),
     val availableDippingSauces: List<String> = emptyList(),

@@ -27,11 +27,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
 import wingzone.zenith.data.models.*
 import wingzone.zenith.data.repository.AvailabilityRepository
 import wingzone.zenith.ui.theme.*
@@ -43,7 +45,8 @@ fun EntreeCustomizationDialog(
     onDismiss: () -> Unit,
     onConfirm: (quantity: Int, customization: EntreeCustomization) -> Unit,
     activeLobbyId: String? = null,
-    activeLobbyCode: String? = null
+    activeLobbyCode: String? = null,
+    userHasPaid: Boolean = false
 ) {
     // Availability Repository
     val availabilityRepository = remember { AvailabilityRepository() }
@@ -61,6 +64,7 @@ fun EntreeCustomizationDialog(
     var selectedDippingSauce by remember { mutableStateOf<DippingSauce?>(null) }
     var selectedDrink by remember { mutableStateOf<Drink?>(null) }
     var selectedBoneType by remember { mutableStateOf<BoneType?>(null) }
+    var selectedSaladType by remember { mutableStateOf<String?>(null) }
     // Initialize fries exchange with default "Fries" if available
     var selectedFriesExchange by remember { 
         mutableStateOf<FriesExchangeOption?>(
@@ -113,13 +117,15 @@ fun EntreeCustomizationDialog(
                         start = 16.dp,
                         end = 16.dp,
                         top = 16.dp,
-                        bottom = 180.dp  // Space for the overlaid button
+                        bottom = 220.dp  // Increased space for the overlaid button and nav gesture area
                     ),
                     verticalArrangement = Arrangement.spacedBy(24.dp)
                 ) {
                     // Item Image (if available)
                     item {
                         if (!menuItem.imageUrl.isNullOrEmpty()) {
+                            var isImageLoading by remember { mutableStateOf(true) }
+                            
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -132,9 +138,37 @@ fun EntreeCustomizationDialog(
                                     model = menuItem.imageUrl,
                                     contentDescription = menuItem.name,
                                     modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
+                                    contentScale = ContentScale.Crop,
+                                    onSuccess = { isImageLoading = false },
+                                    onError = { isImageLoading = false }
                                 )
+                                
+                                // Loading indicator
+                                if (isImageLoading) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color(0xFFE0E0E0).copy(alpha = 0.6f))
+                                    )
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(40.dp),
+                                        color = WingZoneOrange
+                                    )
+                                }
                             }
+                        }
+                        
+                        // Description below image
+                        if (menuItem.description.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = menuItem.description,
+                                fontSize = 14.sp,
+                                color = getAdaptiveTextSecondary(),
+                                lineHeight = 20.sp,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
                     
@@ -186,121 +220,164 @@ fun EntreeCustomizationDialog(
                         }
                     }
                     
-                    // Flavor Selection
-                    item {
-                        Column {
-                            Text(
-                                text = "Choose Flavor (Sauce)",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = TextPrimary
-                            )
-                            Text(
-                                text = "Required • Pick 1",
-                                fontSize = 12.sp,
-                                color = TextSecondary
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            
-                            // Get available flavors from Firebase or show all if not specified
-                            val availableFlavors = menuItem.customizationOptions?.availableFlavors
-                            val flavorsToShow = if (!availableFlavors.isNullOrEmpty()) {
-                                Flavor.values().filter { flavor ->
-                                    availableFlavors.any { it.equals(flavor.displayName, ignoreCase = true) } &&
-                                    availabilitySettings.flavors.contains(flavor.displayName) // Check availability
+                    // Flavor Selection (only if requiresFlavor is true)
+                    if (menuItem.customizationOptions?.requiresFlavor == true) {
+                        item {
+                            Column {
+                                Text(
+                                    text = "Choose Flavor (Sauce)",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = "Required • Pick 1",
+                                    fontSize = 12.sp,
+                                    color = TextSecondary
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                
+                                // Get available flavors from Firebase or show all if not specified
+                                val availableFlavors = menuItem.customizationOptions.availableFlavors
+                                val flavorsToShow = if (!availableFlavors.isNullOrEmpty()) {
+                                    Flavor.values().filter { flavor ->
+                                        availableFlavors.any { it.equals(flavor.displayName, ignoreCase = true) } &&
+                                        availabilitySettings.flavors.contains(flavor.displayName) // Check availability
+                                    }
+                                } else {
+                                    Flavor.values().filter { flavor ->
+                                        availabilitySettings.flavors.contains(flavor.displayName) // Check availability
+                                    }
                                 }
-                            } else {
-                                Flavor.values().filter { flavor ->
-                                    availabilitySettings.flavors.contains(flavor.displayName) // Check availability
-                                }
+                                
+                                // Show chips in rows
+                                ChipGroup(
+                                    items = flavorsToShow.map { it.displayName },
+                                    selectedItem = selectedFlavor?.displayName,
+                                    onItemSelected = { name ->
+                                        selectedFlavor = flavorsToShow.find { it.displayName == name }
+                                    }
+                                )
                             }
-                            
-                            // Show chips in rows
-                            ChipGroup(
-                                items = flavorsToShow.map { it.displayName },
-                                selectedItem = selectedFlavor?.displayName,
-                                onItemSelected = { name ->
-                                    selectedFlavor = flavorsToShow.find { it.displayName == name }
-                                }
-                            )
                         }
                     }
                     
-                    // Dipping Sauce Selection
-                    item {
-                        Column {
-                            Text(
-                                text = "Choose Dipping Sauce",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = TextPrimary
-                            )
-                            Text(
-                                text = "Required • Pick 1",
-                                fontSize = 12.sp,
-                                color = TextSecondary
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            
-                            // Get available dipping sauces from Firebase or show all if not specified
-                            val availableSauces = menuItem.customizationOptions?.availableDippingSauces
-                            val saucesToShow = if (!availableSauces.isNullOrEmpty()) {
-                                DippingSauce.values().filter { sauce ->
-                                    availableSauces.any { it.equals(sauce.displayName, ignoreCase = true) } &&
-                                    availabilitySettings.dippingSauces.contains(sauce.displayName) // Check availability
+                    // Dipping Sauce Selection (only if requiresDippingSauce is true)
+                    if (menuItem.customizationOptions?.requiresDippingSauce == true) {
+                        item {
+                            Column {
+                                Text(
+                                    text = "Choose Dipping Sauce",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = "Required • Pick 1",
+                                    fontSize = 12.sp,
+                                    color = TextSecondary
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                
+                                // Get available dipping sauces from Firebase or show all if not specified
+                                val availableSauces = menuItem.customizationOptions.availableDippingSauces
+                                val saucesToShow = if (!availableSauces.isNullOrEmpty()) {
+                                    DippingSauce.values().filter { sauce ->
+                                        availableSauces.any { it.equals(sauce.displayName, ignoreCase = true) } &&
+                                        availabilitySettings.dippingSauces.contains(sauce.displayName) // Check availability
+                                    }
+                                } else {
+                                    DippingSauce.values().filter { sauce ->
+                                        availabilitySettings.dippingSauces.contains(sauce.displayName) // Check availability
+                                    }
                                 }
-                            } else {
-                                DippingSauce.values().filter { sauce ->
-                                    availabilitySettings.dippingSauces.contains(sauce.displayName) // Check availability
-                                }
+                                
+                                ChipGroup(
+                                    items = saucesToShow.map { it.displayName },
+                                    selectedItem = selectedDippingSauce?.displayName,
+                                    onItemSelected = { name ->
+                                        selectedDippingSauce = saucesToShow.find { it.displayName == name }
+                                    }
+                                )
                             }
-                            
-                            ChipGroup(
-                                items = saucesToShow.map { it.displayName },
-                                selectedItem = selectedDippingSauce?.displayName,
-                                onItemSelected = { name ->
-                                    selectedDippingSauce = saucesToShow.find { it.displayName == name }
-                                }
-                            )
                         }
                     }
                     
-                    // Drink Selection
-                    item {
-                        Column {
-                            Text(
-                                text = "Choose Drink",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = TextPrimary
-                            )
-                            Text(
-                                text = "Required • Pick 1",
-                                fontSize = 12.sp,
-                                color = TextSecondary
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            
-                            // Get available beverages from Firebase or show all if not specified
-                            val availableBeverages = menuItem.customizationOptions?.availableBeverages
-                            val drinksToShow = if (!availableBeverages.isNullOrEmpty()) {
-                                Drink.values().filter { drink ->
-                                    availableBeverages.any { it.equals(drink.displayName, ignoreCase = true) } &&
-                                    availabilitySettings.beverages.contains(drink.displayName) // Check availability
-                                }
-                            } else {
-                                Drink.values().filter { drink ->
-                                    availabilitySettings.beverages.contains(drink.displayName) // Check availability
-                                }
+                    // Salad Selection (only if requiresSaladChoice is true)
+                    if (menuItem.customizationOptions?.requiresSaladChoice == true) {
+                        item {
+                            Column {
+                                Text(
+                                    text = "Choose Salad",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = "Required • Pick 1",
+                                    fontSize = 12.sp,
+                                    color = TextSecondary
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                
+                                val saladOptions = listOf("Garden Salad", "Caesar Salad")
+                                
+                                ChipGroup(
+                                    items = saladOptions,
+                                    selectedItem = selectedSaladType,
+                                    onItemSelected = { name ->
+                                        selectedSaladType = name
+                                    }
+                                )
                             }
-                            
-                            ChipGroup(
-                                items = drinksToShow.map { it.displayName },
-                                selectedItem = selectedDrink?.displayName,
-                                onItemSelected = { name ->
-                                    selectedDrink = drinksToShow.find { it.displayName == name }
+                        }
+                    }
+                    
+                    // Drink Selection (only if requiresBeverage is true)
+                    if (menuItem.customizationOptions?.requiresBeverage == true) {
+                        item {
+                            Column {
+                                Text(
+                                    text = "Choose Drink",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = "Required • Pick 1",
+                                    fontSize = 12.sp,
+                                    color = TextSecondary
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                
+                                // Get available beverages from Firebase or show all if not specified
+                                val availableBeverages = menuItem.customizationOptions.availableBeverages
+                                // DEBUG: Log beverage options
+                                android.util.Log.d("EntreeCustomization", "Item: ${menuItem.name}")
+                                android.util.Log.d("EntreeCustomization", "availableBeverages: $availableBeverages")
+                                android.util.Log.d("EntreeCustomization", "availabilitySettings.beverages: ${availabilitySettings.beverages}")
+                                
+                                val drinksToShow = if (!availableBeverages.isNullOrEmpty()) {
+                                    Drink.values().filter { drink ->
+                                        drink != Drink.NONE && availableBeverages.any { it.equals(drink.displayName, ignoreCase = true) }
+                                    }
+                                } else {
+                                    // Show all drinks except NONE if no specific list provided
+                                    Drink.values().filter { drink -> 
+                                        drink != Drink.NONE && availabilitySettings.beverages.contains(drink.displayName)
+                                    }
                                 }
-                            )
+                                
+                                android.util.Log.d("EntreeCustomization", "drinksToShow: ${drinksToShow.map { it.displayName }}")
+                                
+                                ChipGroup(
+                                    items = drinksToShow.map { it.displayName },
+                                    selectedItem = selectedDrink?.displayName,
+                                    onItemSelected = { name ->
+                                        selectedDrink = drinksToShow.find { it.displayName == name }
+                                    }
+                                )
+                            }
                         }
                     }
                     
@@ -375,26 +452,51 @@ fun EntreeCustomizationDialog(
                     onQuantityChange = { quantity = it },
                     onAddToCart = {
                         val requiresBoneType = menuItem.customizationOptions?.requiresBoneType == true
-                        val requiresFriesExchange = menuItem.customizationOptions?.allowFriesExchange == true
-                        val isValid = selectedFlavor != null && selectedDippingSauce != null && selectedDrink != null &&
+                        val requiresFlavor = menuItem.customizationOptions?.requiresFlavor == true
+                        val requiresDippingSauce = menuItem.customizationOptions?.requiresDippingSauce == true
+                        val requiresBeverage = menuItem.customizationOptions?.requiresBeverage == true
+                        val requiresFriesExchange = menuItem.customizationOptions?.allowFriesExchange == true && 
+                            !menuItem.customizationOptions?.friesExchanges.isNullOrEmpty()
+                        val requiresSaladChoice = menuItem.customizationOptions?.requiresSaladChoice == true
+                        
+                        // DEBUG: Log validation state
+                        android.util.Log.d("EntreeCustomization", "=== VALIDATION CHECK ===")
+                        android.util.Log.d("EntreeCustomization", "Item: ${menuItem.name}")
+                        android.util.Log.d("EntreeCustomization", "requiresFlavor: $requiresFlavor, selected: $selectedFlavor")
+                        android.util.Log.d("EntreeCustomization", "requiresDippingSauce: $requiresDippingSauce, selected: $selectedDippingSauce")
+                        android.util.Log.d("EntreeCustomization", "requiresBeverage: $requiresBeverage, selected: $selectedDrink")
+                        android.util.Log.d("EntreeCustomization", "requiresBoneType: $requiresBoneType, selected: $selectedBoneType")
+                        
+                        val isValid = (!requiresFlavor || selectedFlavor != null) &&
+                                (!requiresDippingSauce || selectedDippingSauce != null) &&
+                                (!requiresBeverage || selectedDrink != null) &&
                                 (!requiresBoneType || selectedBoneType != null) &&
-                                (!requiresFriesExchange || selectedFriesExchange != null)
+                                (!requiresFriesExchange || selectedFriesExchange != null) &&
+                                (!requiresSaladChoice || selectedSaladType != null)
+                        
+                        android.util.Log.d("EntreeCustomization", "isValid: $isValid")
+                        
                         if (isValid) {
                             val customization = EntreeCustomization(
-                                flavor = selectedFlavor!!,
-                                dippingSauce = selectedDippingSauce!!,
-                                drink = selectedDrink!!,
+                                flavor = selectedFlavor ?: Flavor.BUFFALO_WING,
+                                dippingSauce = selectedDippingSauce ?: DippingSauce.NONE,
+                                drink = selectedDrink ?: Drink.NONE,
                                 boneType = selectedBoneType,
-                                friesExchange = selectedFriesExchange
+                                friesExchange = selectedFriesExchange,
+                                saladType = selectedSaladType
                             )
                             onConfirm(quantity, customization)
                         }
                     },
-                        enabled = selectedFlavor != null && selectedDippingSauce != null && selectedDrink != null &&
+                        enabled = (menuItem.customizationOptions?.requiresFlavor != true || selectedFlavor != null) &&
+                                (menuItem.customizationOptions?.requiresDippingSauce != true || selectedDippingSauce != null) &&
+                                (menuItem.customizationOptions?.requiresBeverage != true || selectedDrink != null) &&
                                 (menuItem.customizationOptions?.requiresBoneType != true || selectedBoneType != null) &&
-                                (menuItem.customizationOptions?.allowFriesExchange != true || selectedFriesExchange != null),
+                                ((menuItem.customizationOptions?.allowFriesExchange != true || menuItem.customizationOptions?.friesExchanges.isNullOrEmpty()) || selectedFriesExchange != null) &&
+                                (menuItem.customizationOptions?.requiresSaladChoice != true || selectedSaladType != null),
                         activeLobbyId = activeLobbyId,
-                        activeLobbyCode = activeLobbyCode
+                        activeLobbyCode = activeLobbyCode,
+                        userHasPaid = userHasPaid
                     )
                 }
             }
@@ -448,6 +550,7 @@ fun BottomActionBar(
     enabled: Boolean,
     activeLobbyId: String? = null,
     activeLobbyCode: String? = null,
+    userHasPaid: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -459,6 +562,7 @@ fun BottomActionBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(bottom = 24.dp)
         ) {
             // Quantity controls row
             Row(
@@ -509,7 +613,7 @@ fun BottomActionBar(
             // Add to Cart/Lobby button - FULL WIDTH
             Button(
                 onClick = onAddToCart,
-                enabled = enabled,
+                enabled = enabled && !userHasPaid,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (activeLobbyId != null) WingZoneOrange else WingZoneRed,
                     disabledContainerColor = LightGray

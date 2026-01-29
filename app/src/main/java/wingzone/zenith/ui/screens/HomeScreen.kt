@@ -36,6 +36,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import coil.compose.AsyncImage
+import wingzone.zenith.data.model.HomeBanner
+import wingzone.zenith.data.repository.FirebaseBannerRepository
 import wingzone.zenith.ui.theme.*
 import wingzone.zenith.viewmodel.AuthViewModel
 import wingzone.zenith.viewmodel.CartViewModel
@@ -81,8 +84,8 @@ fun HomeScreen(
             // Clear group order context when leaving menu
             // This ensures personal cart is used by default
             val currentOrder = groupOrderViewModel.currentGroupOrder.value
-            if (currentOrder != null && selectedTab != 3) {
-                // Only clear if not going to Group Order tab
+            if (currentOrder != null && selectedTab != 2 && selectedTab != 3) {
+                // Only clear if not going to Cart tab (2) or Group Order tab (3)
                 groupOrderViewModel.setCurrentGroupOrder(null)
             }
         }
@@ -148,15 +151,20 @@ fun HomeScreen(
                     cartViewModel = cartViewModel,
                     authViewModel = authViewModel,
                     groupOrderViewModel = groupOrderViewModel,
+                    lobbyViewModel = lobbyViewModel,
                     onAuthRequired = onAuthRequired,
                     onNavigateToCart = { selectedTab = 2 }
                 )
             }
             2 -> {
                 // Cart Tab
+                val currentLobbyIdFromViewModel by lobbyViewModel.currentLobbyId.collectAsState()
                 CartScreen(
                     cartViewModel = cartViewModel,
                     authViewModel = authViewModel,
+                    groupOrderViewModel = groupOrderViewModel,
+                    lobbyViewModel = lobbyViewModel,
+                    currentLobbyId = currentLobbyIdFromViewModel,
                     onAuthRequired = onAuthRequired,
                     onCheckoutClick = { /* TODO: Navigate to checkout */ }
                 )
@@ -404,22 +412,29 @@ fun BalanceCard(
 
 @Composable
 fun PromoCarousel() {
-    val pagerState = rememberPagerState(pageCount = { 3 })
-    val coroutineScope = rememberCoroutineScope()
+    var banners by remember { mutableStateOf<List<HomeBanner>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    val bannerRepository = remember { FirebaseBannerRepository() }
+    val coroutineScope = rememberCoroutineScope()
     
-    // Simulate loading delay
+    // Fetch banners from Firestore
     LaunchedEffect(Unit) {
-        delay(800) // Simulate data loading
-        isLoading = false
+        try {
+            banners = bannerRepository.getActiveBanners()
+            isLoading = false
+        } catch (e: Exception) {
+            isLoading = false
+        }
     }
     
+    val pagerState = rememberPagerState(pageCount = { banners.size.coerceAtLeast(1) })
+    
     // Auto-scroll effect
-    LaunchedEffect(isLoading) {
-        if (!isLoading) {
+    LaunchedEffect(isLoading, banners.size) {
+        if (!isLoading && banners.isNotEmpty()) {
             while (true) {
                 delay(5000) // 5 seconds delay
-                val nextPage = (pagerState.currentPage + 1) % 3
+                val nextPage = (pagerState.currentPage + 1) % banners.size
                 pagerState.animateScrollToPage(nextPage)
             }
         }
@@ -438,6 +453,23 @@ fun PromoCarousel() {
                     .clip(RoundedCornerShape(16.dp))
                     .background(Color.LightGray.copy(alpha = 0.3f))
             )
+        } else if (banners.isEmpty()) {
+            // No banners available
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(160.dp)
+                    .padding(horizontal = 16.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(WingZoneRed.copy(alpha = 0.1f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No promotions available",
+                    color = TextSecondary,
+                    fontSize = 14.sp
+                )
+            }
         } else {
             // Carousel
             HorizontalPager(
@@ -446,37 +478,39 @@ fun PromoCarousel() {
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
             ) { page ->
-                PromoBanner(pageIndex = page)
+                PromoBanner(banner = banners[page])
             }
         }
         
         Spacer(modifier = Modifier.height(12.dp))
         
         // Page Indicators
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            repeat(3) { index ->
-                Box(
-                    modifier = Modifier
-                        .size(if (pagerState.currentPage == index) 24.dp else 8.dp, 8.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (pagerState.currentPage == index) WingZoneRed 
-                            else Color.Gray.copy(alpha = 0.3f)
-                        )
-                        .clickable {
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(index)
+        if (banners.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                repeat(banners.size) { index ->
+                    Box(
+                        modifier = Modifier
+                            .size(if (pagerState.currentPage == index) 24.dp else 8.dp, 8.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (pagerState.currentPage == index) WingZoneRed 
+                                else Color.Gray.copy(alpha = 0.3f)
+                            )
+                            .clickable {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(index)
+                                }
                             }
-                        }
-                )
-                if (index < 2) {
-                    Spacer(modifier = Modifier.width(8.dp))
+                    )
+                    if (index < banners.size - 1) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
                 }
             }
         }
@@ -484,29 +518,17 @@ fun PromoCarousel() {
 }
 
 @Composable
-fun PromoBanner(pageIndex: Int) {
-    val promoData = when (pageIndex) {
-        0 -> PromoData(
-            title = "SPICY",
-            subtitle = "WING COMBO",
-            description = "LIMITED TIME",
-            backgroundColor = WingZoneRed,
-            accentColor = WingZoneOrange
-        )
-        1 -> PromoData(
-            title = "CRISPY",
-            subtitle = "TENDERS",
-            description = "NEW FLAVOR",
-            backgroundColor = WingZoneRedLight,
-            accentColor = WingZoneOrange
-        )
-        else -> PromoData(
-            title = "FAMILY",
-            subtitle = "FEAST DEAL",
-            description = "SAVE 30%",
-            backgroundColor = WingZoneOrange,
-            accentColor = WingZoneRed
-        )
+fun PromoBanner(banner: HomeBanner) {
+    val bgColor = try {
+        Color(android.graphics.Color.parseColor(banner.backgroundColor))
+    } catch (e: Exception) {
+        WingZoneRed
+    }
+    
+    val accentColor = try {
+        Color(android.graphics.Color.parseColor(banner.accentColor))
+    } catch (e: Exception) {
+        WingZoneOrange
     }
     
     Card(
@@ -514,11 +536,22 @@ fun PromoBanner(pageIndex: Int) {
             .fillMaxWidth()
             .height(280.dp),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = promoData.backgroundColor)
+        colors = CardDefaults.cardColors(containerColor = bgColor)
     ) {
         Box(
             modifier = Modifier.fillMaxSize()
         ) {
+            // Background Image (if available)
+            if (banner.imageUrl.isNotEmpty()) {
+                AsyncImage(
+                    model = banner.imageUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    alpha = 0.3f
+                )
+            }
+            
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -528,19 +561,19 @@ fun PromoBanner(pageIndex: Int) {
                 // Promo content
                 Column {
                     Text(
-                        text = promoData.title,
+                        text = banner.title,
                         color = Color.White,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = promoData.subtitle,
-                        color = promoData.accentColor,
+                        text = banner.subtitle,
+                        color = accentColor,
                         fontSize = 36.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
                     Text(
-                        text = promoData.description,
+                        text = banner.description,
                         color = Color.White,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold

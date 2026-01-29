@@ -77,6 +77,9 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.3.1")
     implementation("androidx.camera:camera-view:1.3.1")
     
+    // Coil for image loading
+    implementation("io.coil-kt:coil-compose:2.5.0")
+    
     // WorkManager for background tasks
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     

@@ -7,6 +7,8 @@ import type { GroupOrder } from '../types';
 import ReceiptModal from '../components/ReceiptModal/ReceiptModal';
 import PackagingStickerModal from '../components/PackagingStickerModal/PackagingStickerModal';
 import { aggregateKitchenIngredients } from '../utils/kitchenIngredients';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 type OrderTab = 'individual' | 'group';
 
@@ -78,15 +80,61 @@ const OrdersPage: React.FC = () => {
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
     today: false, // Today's orders are open by default
   });
+  const [visibleGroupReceipts, setVisibleGroupReceipts] = useState<Record<string, boolean>>({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [printerName, setPrinterName] = useState<string>('');
+
+  // Filter orders by search query
+  const filteredIndividualOrders = useMemo(() => {
+    if (!searchQuery.trim()) return individualOrders;
+    const query = searchQuery.toLowerCase();
+    return individualOrders.filter(order => {
+      // Search in multiple fields
+      const searchableText = [
+        order.code,
+        order.id,
+        order.groupOrderCode,
+        order.userName,
+        order.hostUserName
+      ].filter(Boolean).join(' ').toLowerCase();
+      
+      return searchableText.includes(query);
+    });
+  }, [individualOrders, searchQuery]);
+
+  const filteredGroupOrders = useMemo(() => {
+    if (!searchQuery.trim()) return groupOrders;
+    const query = searchQuery.toLowerCase();
+    return groupOrders.filter(order => {
+      // Search in multiple fields
+      const searchableText = [
+        order.code,
+        order.id,
+        order.groupOrderCode,
+        order.userName,
+        order.hostUserName,
+        order.groupName
+      ].filter(Boolean).join(' ').toLowerCase();
+      
+      return searchableText.includes(query);
+    });
+  }, [groupOrders, searchQuery]);
 
   // Group orders by date using useMemo for performance
-  const groupedIndividualOrders = useMemo(() => groupOrdersByDate(individualOrders), [individualOrders]);
-  const groupedGroupOrders = useMemo(() => groupOrdersByDate(groupOrders), [groupOrders]);
+  const groupedIndividualOrders = useMemo(() => groupOrdersByDate(filteredIndividualOrders), [filteredIndividualOrders]);
+  const groupedGroupOrders = useMemo(() => groupOrdersByDate(filteredGroupOrders), [filteredGroupOrders]);
 
   const toggleSection = (dateKey: string) => {
     setCollapsedSections(prev => ({
       ...prev,
       [dateKey]: !prev[dateKey]
+    }));
+  };
+
+  const toggleGroupReceipt = (orderId: string) => {
+    setVisibleGroupReceipts(prev => ({
+      ...prev,
+      [orderId]: !prev[orderId]
     }));
   };
 
@@ -111,6 +159,22 @@ const OrdersPage: React.FC = () => {
       }
     };
     fetchMenuItems();
+
+    // Fetch printer name from settings
+    const fetchPrinterSettings = async () => {
+      try {
+        const settingsRef = doc(db, 'appSettings', 'adminPreferences');
+        const settingsSnap = await getDoc(settingsRef);
+        if (settingsSnap.exists()) {
+          const printer = settingsSnap.data().printerName || '';
+          setPrinterName(printer);
+          console.log('[OrdersPage] Loaded printer from settings:', printer);
+        }
+      } catch (err) {
+        console.error('Error fetching printer settings:', err);
+      }
+    };
+    fetchPrinterSettings();
 
     return () => {
       unsubscribeGroup();
@@ -180,24 +244,93 @@ const OrdersPage: React.FC = () => {
     }
   };
 
-  const handlePrintGroupReceipts = (order: any) => {
-    const groupOrderForPrint: GroupOrderForPrint = {
-      id: order.id,
-      groupName: order.groupName || 'Group Order',
-      hostUserName: order.userName || order.hostUserName || 'Host',
-      participants: (order.participants || []).map((p: any) => ({
-        userId: p.userId,
-        userName: p.userName,
-        items: p.items || [],
-        total: p.total || 0
-      })),
-      orderDate: order.createdAt?.toDate() || new Date(),
-      total: order.total || 0
-    };
+  const handlePrintGroupReceipts = async (order: any) => {
+    try {
+      const groupOrderForPrint: GroupOrderForPrint = {
+        id: order.id,
+        groupName: order.groupName || 'Group Order',
+        hostUserName: order.userName || order.hostUserName || 'Host',
+        participants: (order.members || order.participants || []).map((p: any) => ({
+          userId: p.userId,
+          userName: p.userName || p.name,
+          items: p.cartItems || p.items || [],
+          total: p.total || (p.cartItems || []).reduce((sum: number, item: any) => sum + (item.subtotal || 0), 0)
+        })),
+        orderDate: order.createdAt?.toDate() || new Date(),
+        total: order.total || (order.members || []).reduce((sum: number, m: any) => 
+          sum + (m.cartItems || []).reduce((itemSum: number, item: any) => 
+            itemSum + (item.subtotal || 0), 0
+          ), 0
+        ),
+        orderType: order.orderType,
+        location: order.location || order.selectedLocation,
+        paymentMethod: order.paymentMethod
+      };
 
-    printService.printGroupOrderReceipts(groupOrderForPrint, menuItems);
-    setSuccess(`Printing ${order.participants?.length || 0} receipts...`);
-    setTimeout(() => setSuccess(''), 3000);
+      setSuccess(`Printing ${(order.members || order.participants || []).length + 1} receipts (1 master + ${order.members?.length || 0} members)...`);
+      console.log(`[OrdersPage] Using printer: ${printerName || 'Default'}`);
+      
+      // Force print = true for manual button clicks (bypasses autoPrintEnabled check)
+      // Pass the configured printer name from settings
+      await printService.printGroupOrderReceipts(groupOrderForPrint, menuItems, printerName || undefined, true);
+      
+      setSuccess(`Successfully printed ${(order.members || order.participants || []).length + 1} receipts!`);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error) {
+      console.error('Error printing group receipts:', error);
+      setError(`Failed to print receipts: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setTimeout(() => setError(''), 5000);
+    }
+  };
+
+  // Enrich order with kitchen ingredients for receipt preview
+  const enrichOrderForPreview = (order: any) => {
+    if (!order) return order;
+
+    // For group orders, enrich member cart items
+    if (order.members || order.isGroupOrder) {
+      return {
+        ...order,
+        members: (order.members || []).map((member: any) => ({
+          ...member,
+          cartItems: (member.cartItems || []).map((item: any) => {
+            const itemName = item.menuItemName || item.name;
+            const menuItem = menuItems.find(m => m.name === itemName);
+            
+            if (menuItem) {
+              return {
+                ...item,
+                menuItem: menuItem,
+                kitchenIngredients: menuItem.kitchenIngredients
+              };
+            }
+            return item;
+          })
+        }))
+      };
+    }
+
+    // For individual orders, enrich items array
+    if (order.items) {
+      return {
+        ...order,
+        items: order.items.map((item: any) => {
+          const itemName = item.menuItemName || item.name;
+          const menuItem = menuItems.find(m => m.name === itemName);
+          
+          if (menuItem) {
+            return {
+              ...item,
+              menuItem: menuItem,
+              kitchenIngredients: menuItem.kitchenIngredients
+            };
+          }
+          return item;
+        })
+      };
+    }
+
+    return order;
   };
 
   // Helper function to categorize items
@@ -249,6 +382,22 @@ const OrdersPage: React.FC = () => {
     // Aggregate raw kitchen ingredients using shared utility
     const kitchenIngredientsSummary = aggregateKitchenIngredients(items, menuItems);
 
+    // Helper to normalize keys for consistent aggregation
+    const normalizeKey = (key: string): string => {
+      let normalized = key
+        .replace(/_/g, ' ')  // Replace underscores with spaces
+        .replace(/-/g, ' ')  // Replace hyphens with spaces
+        .split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ');
+      
+      // Normalize common synonyms
+      if (normalized === 'Smiley Fries') normalized = 'Smiley';
+      if (normalized === 'Coca Cola') normalized = 'Coke';
+      
+      return normalized;
+    };
+
     // Organize kitchen summary into categories
     const mainItems: Record<string, number> = {};
     const sidesItems: Record<string, number> = {};
@@ -257,27 +406,57 @@ const OrdersPage: React.FC = () => {
 
     // Categorize existing ingredients
     Object.entries(kitchenIngredientsSummary).forEach(([ingredient, count]) => {
-      const lower = ingredient.toLowerCase();
-      if (lower.includes('wings') || lower.includes('tenders') || lower.includes('chicken') || 
-          lower.includes('burger') || lower.includes('grilled')) {
-        mainItems[ingredient] = count;
-      } else if (lower.includes('fries') || lower.includes('salad') || lower.includes('rice') || 
-                 lower.includes('bread') || lower.includes('veggies') || lower.includes('vegetables') ||
-                 lower.includes('chips') || lower.includes('stix') || lower.includes('mozzarella')) {
-        sidesItems[ingredient] = count;
+      let key = ingredient;
+      
+      // Strip flavors (everything after " - ")
+      key = key.replace(/\s*-\s*.+$/, '').trim();
+      
+      const lower = key.toLowerCase();
+      
+      // Convert bone type ingredients to wings
+      if (lower === 'boneless' || lower.includes('boneless wings')) {
+        key = 'Boneless Wings';
+        mainItems[normalizeKey(key)] = (mainItems[normalizeKey(key)] || 0) + count;
+      } else if (lower === 'original' || (lower.includes('wings') && lower.includes('original'))) {
+        key = 'Wings';
+        mainItems[normalizeKey(key)] = (mainItems[normalizeKey(key)] || 0) + count;
+      }
+      // Main proteins (excluding rice/veggie combos)
+      else if ((lower.includes('wings') || lower.includes('tender') || 
+                lower.includes('grill chicken') || lower.includes('grilled chicken') ||
+                (lower.includes('beef') && !lower.includes('rice') && !lower.includes('veggie'))) &&
+               !lower.includes('rice') && !lower.includes('salad') && !lower.includes('veggie')) {
+        mainItems[normalizeKey(key)] = (mainItems[normalizeKey(key)] || 0) + count;
+      }
+      // Fries (including substitutions)
+      else if (lower.includes('fries') || lower.includes('wedge')) {
+        sidesItems[normalizeKey(key)] = (sidesItems[normalizeKey(key)] || 0) + count;
+      }
+      // Salads
+      else if (lower.includes('salad')) {
+        sidesItems[normalizeKey(key)] = (sidesItems[normalizeKey(key)] || 0) + count;
+      }
+      // Other sides (rice, veggies, chips, etc.)
+      else if (lower.includes('rice') || lower.includes('veggies') || lower.includes('vegetables') ||
+               lower.includes('grilled veg') || lower.includes('bread') || lower.includes('chips') ||
+               lower.includes('stix') || lower.includes('mozzarella') || lower.includes('smiley') ||
+               lower.includes('potato') || lower.includes('drumstick')) {
+        sidesItems[normalizeKey(key)] = (sidesItems[normalizeKey(key)] || 0) + count;
       } else {
-        sidesItems[ingredient] = count;
+        sidesItems[normalizeKey(key)] = (sidesItems[normalizeKey(key)] || 0) + count;
       }
     });
 
     // Add drinks from customizations
     Object.entries(drinkCounts).forEach(([drink, count]) => {
-      drinksItems[drink] = (drinksItems[drink] || 0) + (count as number);
+      const normalizedDrink = normalizeKey(drink);
+      drinksItems[normalizedDrink] = (drinksItems[normalizedDrink] || 0) + (count as number);
     });
     
     // Add sauces to dippings
     Object.entries(sauceCounts).forEach(([sauce, count]) => {
-      dippingsItems[sauce] = (dippingsItems[sauce] || 0) + (count as number);
+      const normalizedSauce = normalizeKey(sauce);
+      dippingsItems[normalizedSauce] = (dippingsItems[normalizedSauce] || 0) + (count as number);
     });
 
     return { 
@@ -310,7 +489,7 @@ const OrdersPage: React.FC = () => {
     <div>
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h1 className="page-title">
-          Orders <Badge color="primary">{activeTab === 'individual' ? individualOrders.length : groupOrders.length}</Badge>
+          Orders <Badge color="primary">{activeTab === 'individual' ? filteredIndividualOrders.length : filteredGroupOrders.length}</Badge>
         </h1>
         <div>
           <Button
@@ -367,6 +546,23 @@ const OrdersPage: React.FC = () => {
           </NavLink>
         </NavItem>
       </Nav>
+
+      {/* Search Bar */}
+      <div className="mb-3">
+        <input
+          type="text"
+          className="form-control"
+          placeholder="🔍 Search by order code, username, or group name..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={{ maxWidth: '500px' }}
+        />
+        {searchQuery && (
+          <small className="text-muted mt-1 d-block">
+            Found {activeTab === 'individual' ? filteredIndividualOrders.length : filteredGroupOrders.length} order(s) matching "{searchQuery}"
+          </small>
+        )}
+      </div>
 
       {activeTab === 'individual' ? (
         individualOrders.length === 0 ? (
@@ -435,7 +631,7 @@ const OrdersPage: React.FC = () => {
                                 color="info"
                                 outline
                                 onClick={() => {
-                                  setSelectedOrder(order);
+                                  setSelectedOrder(enrichOrderForPreview(order));
                                   setReceiptModalOpen(true);
                                 }}
                               >
@@ -492,7 +688,7 @@ const OrdersPage: React.FC = () => {
             <div>
               <strong>Group Order #{order.groupOrderCode || order.code}</strong>
               <span className="text-muted ms-3">Host: {order.userName || order.hostUserName}</span>
-              <Badge color="primary" className="ms-2">{order.memberCount || 0} Members</Badge>
+              <Badge color="primary" className="ms-2">{order.members?.length || order.memberCount || 0} Members</Badge>
             </div>
             <Badge color={getStatusColor(order.status)} className="text-uppercase">
               {order.status}
@@ -555,68 +751,177 @@ const OrdersPage: React.FC = () => {
                 <small className="text-muted">Created:</small>
                 <div>{formatDate(order.createdAt)}</div>
               </div>
-              <div className="mb-2">
-                <small className="text-muted">Delivery Address:</small>
-                <div>{order.deliveryAddress || 'Not specified'}</div>
-              </div>
             </Col>
             <Col md={6}>
-              <h6 className="mb-2">Members</h6>
-              <div style={{ whiteSpace: 'pre-line', backgroundColor: '#f8f9fa', padding: '10px', borderRadius: '5px', fontSize: '0.9em' }}>
-                {order.memberDetails || 'No member details available'}
+              <h6 className="mb-2">Members ({order.members?.length || order.memberCount || 0})</h6>
+              <div style={{ backgroundColor: '#f8f9fa', padding: '10px', borderRadius: '5px', fontSize: '0.9em' }}>
+                {order.members && order.members.length > 0 ? (
+                  <div>
+                    {order.members.map((member: any, idx: number) => {
+                      const memberTotal = (member.cartItems || []).reduce((sum: number, item: any) => sum + (item.subtotal || 0), 0);
+                      const isHost = member.userId === order.hostId || member.isHost;
+                      return (
+                        <div key={idx} style={{ marginBottom: '8px', paddingBottom: '8px', borderBottom: idx < order.members.length - 1 ? '1px solid #dee2e6' : 'none' }}>
+                          <div>
+                            <strong>{member.userName || member.name || 'Unknown'}</strong>
+                            {isHost && <Badge color="warning" className="ms-2" style={{ fontSize: '0.7em' }}>HOST</Badge>}
+                          </div>
+                          <div style={{ fontSize: '0.85em', color: '#6c757d' }}>
+                            {member.cartItems?.length || 0} item(s) • RM {memberTotal.toFixed(2)}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div style={{ color: '#6c757d' }}>
+                    <div className="mb-2">
+                      <i className="bi bi-info-circle me-2"></i>
+                      This is an old order from before the member tracking update.
+                    </div>
+                    {order.memberDetails && (
+                      <div style={{ fontSize: '0.9em', whiteSpace: 'pre-line' }}>{order.memberDetails}</div>
+                    )}
+                    {!order.memberDetails && (
+                      <div>No detailed member information available</div>
+                    )}
+                  </div>
+                )}
               </div>
             </Col>
           </Row>
           
           <Row className="mb-3">
             <Col>
-              <h6 className="mb-2">Items</h6>
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <h6 className="mb-0">Items & Receipt Preview</h6>
+                <Button
+                  size="sm"
+                  color="info"
+                  outline
+                  onClick={() => toggleGroupReceipt(order.id)}
+                >
+                  <i className={`bi bi-chevron-${visibleGroupReceipts[order.id] ? 'up' : 'down'} me-1`}></i>
+                  {visibleGroupReceipts[order.id] ? 'Hide' : 'Show'} Receipt Preview
+                </Button>
+              </div>
+              {visibleGroupReceipts[order.id] && (
               <Table responsive bordered size="sm">
                 <thead>
                   <tr>
                     <th>Item</th>
-                    <th>Qty</th>
-                    <th>Price</th>
-                    <th>Subtotal</th>
+                    <th style={{ width: '80px' }}>Qty</th>
+                    <th style={{ width: '100px' }}>Price</th>
+                    <th style={{ width: '100px' }}>Subtotal</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(() => {
-                    const { meals, sides, beverages, drinks, dippingSauces, drinkCounts, sauceCounts, mainItems, sidesItems, dippingsItems, drinksItems } = categorizeItems(order.items || []);
+                    // Group items by member
+                    const memberGroups: Record<string, any[]> = {};
+                    
+                    if (order.members && order.members.length > 0) {
+                      order.members.forEach((member: any) => {
+                        const memberKey = member.userId || member.userName || member.name;
+                        const memberName = member.userName || member.name || 'Unknown';
+                        const isHost = member.userId === order.hostId || member.isHost;
+                        
+                        if (!memberGroups[memberKey]) {
+                          memberGroups[memberKey] = [];
+                        }
+                        
+                        (member.cartItems || []).forEach((item: any) => {
+                          memberGroups[memberKey].push({
+                            ...item,
+                            memberName,
+                            isHost,
+                            name: item.menuItem?.name || item.menuItemName || item.name || 'Unknown Item',
+                            price: item.menuItem?.price || item.price || 0,
+                            quantity: item.quantity || 1,
+                            subtotal: item.subtotal || 0,
+                            customization: item.customization
+                          });
+                        });
+                      });
+                    }
+                    
+                    if (Object.keys(memberGroups).length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={4} className="text-center text-muted">No items found</td>
+                        </tr>
+                      );
+                    }
+
+                    // Get all items for kitchen summary
+                    const allItems = Object.values(memberGroups).flat();
+                    const { meals, sides, beverages, drinks, dippingSauces, drinkCounts, sauceCounts, mainItems, sidesItems, dippingsItems, drinksItems } = categorizeItems(allItems);
                     
                     return (
                       <>
-                        {/* All Items */}
-                        {[...meals, ...sides, ...beverages].map((item: any, idx: number) => (
-                          <tr key={`item-${idx}`}>
-                            <td>
-                              <strong>{item.name}</strong>
-                              {item.customization?.boneType && (
-                                <div><small className="text-muted">&gt; {item.customization.boneType}</small></div>
-                              )}
-                              {item.customization?.flavor && (
-                                <div><small className="text-muted">&gt; Flavor: {item.customization.flavor.replace(/_/g, ' ')}</small></div>
-                              )}
-                              {item.customization?.dippingSauce && (
-                                <div style={{ backgroundColor: '#ffeb9c', padding: '2px 4px', marginTop: '2px' }}>
-                                  <small><strong>&gt; *** DIP: {item.customization.dippingSauce.replace(/_/g, ' ')} ***</strong></small>
-                                </div>
-                              )}
-                              {item.customization?.friesExchange && (
-                                <div><small className="text-muted">&gt; Side: {item.customization.friesExchange.name}</small></div>
-                              )}
-                              {item.customization?.saladType && (
-                                <div><small className="text-muted">&gt; Salad: {item.customization.saladType}</small></div>
-                              )}
-                              {item.customization?.drink && (
-                                <div><small className="text-muted">&gt; Drink: {item.customization.drink}</small></div>
-                              )}
-                            </td>
-                            <td className="text-center">{item.quantity}</td>
-                            <td>RM {(item.price || 0).toFixed(2)}</td>
-                            <td><strong>RM {(item.subtotal || 0).toFixed(2)}</strong></td>
-                          </tr>
-                        ))}
+                        {/* Items Grouped by Member */}
+                        {Object.entries(memberGroups).map(([memberKey, items], memberIdx) => {
+                          const memberTotal = items.reduce((sum, item) => sum + (item.subtotal || 0), 0);
+                          const memberName = items[0]?.memberName || 'Unknown';
+                          const isHost = items[0]?.isHost || false;
+                          
+                          return (
+                            <React.Fragment key={memberKey}>
+                              {/* Member Header Row */}
+                              <tr style={{ 
+                                backgroundColor: '#4a5568', 
+                                color: 'white',
+                                borderTop: memberIdx > 0 ? '3px solid #2d3748' : 'none',
+                                borderBottom: '2px solid #2d3748'
+                              }}>
+                                <td colSpan={4} style={{ padding: '12px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <i className="bi bi-person-fill" style={{ fontSize: '1.2em' }}></i>
+                                    <strong style={{ fontSize: '1.15em', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                      {memberName}
+                                    </strong>
+                                    {isHost && <Badge color="warning" style={{ fontSize: '0.7em' }}>HOST</Badge>}
+                                    <span style={{ fontSize: '0.85em', opacity: 0.9, marginLeft: '8px' }}>
+                                      {items.length} item{items.length !== 1 ? 's' : ''} • RM {memberTotal.toFixed(2)}
+                                    </span>
+                                  </div>
+                                </td>
+                              </tr>
+                              
+                              {/* Member's Items */}
+                              {items.map((item: any, idx: number) => (
+                                <tr key={`${memberKey}-item-${idx}`}>
+                                  <td>
+                                    <strong>{item.name}</strong>
+                                    {item.customization?.boneType && (
+                                      <div><small className="text-muted">&gt; {item.customization.boneType}</small></div>
+                                    )}
+                                    {item.customization?.flavor && (
+                                      <div><small className="text-muted">&gt; Flavor: {item.customization.flavor.replace(/_/g, ' ')}</small></div>
+                                    )}
+                                    {item.customization?.dippingSauce && (
+                                      <div style={{ backgroundColor: '#ffeb9c', padding: '2px 4px', marginTop: '2px' }}>
+                                        <small><strong>&gt; DIP: {item.customization.dippingSauce.replace(/_/g, ' ').toUpperCase()}</strong></small>
+                                      </div>
+                                    )}
+                                    {item.customization?.friesExchange && (
+                                      <div><small className="text-muted">&gt; Side: {item.customization.friesExchange.name}</small></div>
+                                    )}
+                                    {item.customization?.saladType && (
+                                      <div><small className="text-muted">&gt; Salad: {item.customization.saladType}</small></div>
+                                    )}
+                                    {item.customization?.drink && (
+                                      <div><small className="text-muted">&gt; Drink: {item.customization.drink}</small></div>
+                                    )}
+                                  </td>
+                                  <td className="text-center">{item.quantity}</td>
+                                  <td>RM {(item.price || 0).toFixed(2)}</td>
+                                  <td><strong>RM {(item.subtotal || 0).toFixed(2)}</strong></td>
+                                </tr>
+                              ))}
+                            </React.Fragment>
+                          );
+                        })}
 
                         {/* Kitchen Summary with Categories */}
                         {(Object.keys(mainItems).length > 0 || 
@@ -637,7 +942,7 @@ const OrdersPage: React.FC = () => {
                                   <div style={{ marginBottom: '10px' }}>
                                     <strong>MAIN:</strong>
                                     {Object.entries(mainItems).map(([ingredient, count]: [string, any], idx) => (
-                                      <div key={idx}>- {count} {ingredient}</div>
+                                      <div key={idx}>- {count} {ingredient.toUpperCase()}</div>
                                     ))}
                                   </div>
                                 )}
@@ -645,7 +950,7 @@ const OrdersPage: React.FC = () => {
                                   <div style={{ marginBottom: '10px' }}>
                                     <strong>SIDES:</strong>
                                     {Object.entries(sidesItems).map(([ingredient, count]: [string, any], idx) => (
-                                      <div key={idx}>- {count} {ingredient}</div>
+                                      <div key={idx}>- {count} {ingredient.toUpperCase()}</div>
                                     ))}
                                   </div>
                                 )}
@@ -653,7 +958,7 @@ const OrdersPage: React.FC = () => {
                                   <div style={{ marginBottom: '10px' }}>
                                     <strong>DIPPINGS:</strong>
                                     {Object.entries(dippingsItems).map(([sauce, count]: [string, any], idx) => (
-                                      <div key={idx}>- {count} {sauce}</div>
+                                      <div key={idx}>- {count} {sauce.toUpperCase()}</div>
                                     ))}
                                   </div>
                                 )}
@@ -661,7 +966,7 @@ const OrdersPage: React.FC = () => {
                                   <div>
                                     <strong>DRINKS:</strong>
                                     {Object.entries(drinksItems).map(([drink, count]: [string, any], idx) => (
-                                      <div key={idx}>- {count} {drink}</div>
+                                      <div key={idx}>- {count} {drink.toUpperCase()}</div>
                                     ))}
                                   </div>
                                 )}
@@ -677,13 +982,21 @@ const OrdersPage: React.FC = () => {
 
                         <tr className="table-active">
                           <td colSpan={3} className="text-end"><strong>TOTAL</strong></td>
-                          <td><strong>RM {(order.total || 0).toFixed(2)}</strong></td>
+                          <td><strong>RM {(
+                            order.total || 
+                            (order.members || []).reduce((sum: number, m: any) => 
+                              sum + (m.cartItems || []).reduce((itemSum: number, item: any) => 
+                                itemSum + (item.subtotal || 0), 0
+                              ), 0
+                            )
+                          ).toFixed(2)}</strong></td>
                         </tr>
                       </>
                     );
                   })()}
                 </tbody>
               </Table>
+              )}
             </Col>
           </Row>
           
@@ -713,7 +1026,7 @@ const OrdersPage: React.FC = () => {
               color="primary"
               onClick={() => handlePrintGroupReceipts(order)}
             >
-              <i className="bi bi-printer me-2"></i>Print Receipts ({order.participants?.length || 0})
+              <i className="bi bi-printer me-2"></i>Print Receipts ({order.members?.length || 0})
             </Button>
             {/* Show cancel button for non-final orders */}
             {order.status !== 'delivered' && order.status !== 'cancelled' && (
@@ -725,28 +1038,6 @@ const OrdersPage: React.FC = () => {
                 <i className="bi bi-x-circle me-2"></i>Cancel Order
               </Button>
             )}
-            <Button 
-              color="info" 
-              outline 
-              onClick={() => {
-                setSelectedOrder(order);
-                setReceiptModalOpen(true);
-              }}
-            >
-              <i className="bi bi-printer me-2"></i>
-              Print Receipt
-            </Button>
-            <Button 
-              color="warning" 
-              outline 
-              onClick={() => {
-                setSelectedOrder(order);
-                setStickerModalOpen(true);
-              }}
-            >
-              <i className="bi bi-tag me-2"></i>
-              Print Stickers
-            </Button>
             <Button 
               color="danger"
               outline
