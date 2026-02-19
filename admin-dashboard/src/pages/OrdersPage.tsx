@@ -182,16 +182,20 @@ const OrdersPage: React.FC = () => {
     };
   }, []);
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string, paymentStatus?: string) => {
+    // Cash orders waiting for payment confirmation
+    if (paymentStatus === 'unpaid') return 'warning';
     const colors: Record<string, string> = {
       active: 'info',
+      pending: 'warning',
+      'pending payment': 'warning',
       confirmed: 'primary',
       preparing: 'warning',
       ready: 'success',
       delivered: 'success',
       cancelled: 'danger',
     };
-    return colors[status] || 'secondary';
+    return colors[status?.toLowerCase()] || 'secondary';
   };
 
   const handleUpdateStatus = async (orderId: string, newStatus: 'pending' | 'confirmed' | 'preparing' | 'ready' | 'delivered' | 'cancelled', isGroupOrder: boolean = true) => {
@@ -205,6 +209,28 @@ const OrdersPage: React.FC = () => {
       setTimeout(() => setSuccess(''), 3000);
     } catch (err: any) {
       setError(err.message || 'Failed to update order status');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const handleConfirmPayment = async (orderId: string, isGroupOrder: boolean = false) => {
+    try {
+      // Import updateDoc from firebase
+      const { updateDoc, doc: firestoreDoc } = await import('firebase/firestore');
+      const collectionName = isGroupOrder ? 'groupOrders' : 'orders';
+      const orderRef = firestoreDoc(db, collectionName, orderId);
+      
+      // Update both paymentStatus and status
+      await updateDoc(orderRef, {
+        paymentStatus: 'paid',
+        status: 'confirmed',
+        updatedAt: new Date()
+      });
+      
+      setSuccess('Payment confirmed! Order is now preparing.');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to confirm payment');
       setTimeout(() => setError(''), 3000);
     }
   };
@@ -264,7 +290,8 @@ const OrdersPage: React.FC = () => {
         ),
         orderType: order.orderType,
         location: order.location || order.selectedLocation,
-        paymentMethod: order.paymentMethod
+        paymentMethod: order.paymentMethod,
+        paymentType: order.paymentType
       };
 
       setSuccess(`Printing ${(order.members || order.participants || []).length + 1} receipts (1 master + ${order.members?.length || 0} members)...`);
@@ -294,7 +321,7 @@ const OrdersPage: React.FC = () => {
         members: (order.members || []).map((member: any) => ({
           ...member,
           cartItems: (member.cartItems || []).map((item: any) => {
-            const itemName = item.menuItemName || item.name;
+            const itemName = item.menuItem?.name || item.menuItemName || item.name;
             const menuItem = menuItems.find(m => m.name === itemName);
             
             if (menuItem) {
@@ -315,7 +342,7 @@ const OrdersPage: React.FC = () => {
       return {
         ...order,
         items: order.items.map((item: any) => {
-          const itemName = item.menuItemName || item.name;
+          const itemName = item.menuItem?.name || item.menuItemName || item.name;
           const menuItem = menuItems.find(m => m.name === itemName);
           
           if (menuItem) {
@@ -342,16 +369,17 @@ const OrdersPage: React.FC = () => {
     const dippingSauces: string[] = [];
 
     items.forEach((item) => {
+      const itemName = item.menuItem?.name || item.name;
       // Check if it's a beverage category
-      if (item.name.includes('Coca-Cola') || item.name.includes('Sprite') || 
-          item.name.includes('Tea') || item.name.includes('Juice') || 
-          item.name.includes('Water')) {
+      if (itemName.includes('Coca-Cola') || itemName.includes('Sprite') || 
+          itemName.includes('Tea') || itemName.includes('Juice') || 
+          itemName.includes('Water')) {
         beverages.push(item);
       }
       // Check if it's a side
-      else if (item.name.includes('Fries') || item.name.includes('Salad') || 
-               item.name.includes('Chips') || item.name.includes('Rice') || 
-               item.name.includes('Stix') || item.name.includes('Mozzarella')) {
+      else if (itemName.includes('Fries') || itemName.includes('Salad') || 
+               itemName.includes('Chips') || itemName.includes('Rice') || 
+               itemName.includes('Stix') || itemName.includes('Mozzarella')) {
         sides.push(item);
       }
       // Otherwise it's a meal
@@ -520,7 +548,8 @@ const OrdersPage: React.FC = () => {
       {/* Auto-progression info banner */}
       <Alert color="info" className="mb-3">
         <i className="bi bi-info-circle me-2"></i>
-        <strong>Auto Status:</strong> Orders automatically progress: Pending → Confirmed (1s) → Preparing (30s). 
+        <strong>Auto Status:</strong> Online/FPX orders auto-progress: Confirmed → Preparing (30s). 
+        <strong className="text-warning"> Cash orders</strong> wait for admin to click <strong>"Confirm Payment"</strong> before entering the queue.
         Click <strong>"Mark as Ready"</strong> when order is complete. Ready orders auto-deliver after 5 min.
       </Alert>
 
@@ -608,14 +637,28 @@ const OrdersPage: React.FC = () => {
                           <td>{order.items?.length || 0} items</td>
                           <td><strong>RM {(order.total || 0).toFixed(2)}</strong></td>
                           <td>
-                            <Badge color={getStatusColor(order.status || 'pending')}>
-                              {(order.status || 'pending').toUpperCase()}
+                            <Badge color={getStatusColor(order.status || 'pending', order.paymentStatus)}>
+                              {order.paymentStatus === 'unpaid'
+                                ? `PENDING PAYMENT`
+                                : (order.status || 'pending').toUpperCase()}
                             </Badge>
                           </td>
                           <td>{order.createdAt?.toDate ? order.createdAt.toDate().toLocaleTimeString() : 'N/A'}</td>
                           <td>
                             <div className="d-flex gap-1">
-                              {order.status !== 'ready' && order.status !== 'delivered' && (
+                              {(order.paymentStatus === 'unpaid' || order.status?.toLowerCase() === 'pending payment') && (
+                                <Button 
+                                  size="sm" 
+                                  color="primary"
+                                  onClick={() => handleConfirmPayment(order.id, false)}
+                                  title="Confirm cash payment received"
+                                >
+                                  <i className="bi bi-cash-coin"></i> Confirm Payment
+                                </Button>
+                              )}
+                              {order.status !== 'ready' && order.status !== 'delivered'
+                                && order.status?.toLowerCase() !== 'pending payment'
+                                && order.paymentStatus !== 'unpaid' && (
                                 <Button 
                                   size="sm" 
                                   color="success"
@@ -889,28 +932,46 @@ const OrdersPage: React.FC = () => {
                               </tr>
                               
                               {/* Member's Items */}
-                              {items.map((item: any, idx: number) => (
+                              {items.map((item: any, idx: number) => {
+                                // Build display name with customization
+                                let displayName = item.name;
+                                
+                                // Add salad type for items that require it
+                                if (item.customization?.saladType && item.menuItem?.customizationOptions?.requiresSaladChoice) {
+                                  displayName += ` (${item.customization.saladType})`;
+                                }
+                                
+                                // For Ranch or Bleu Cheese items, show selection
+                                if (displayName.toLowerCase().includes('ranch or bleu cheese') && item.customization?.dippingSauce) {
+                                  let dressing = item.customization.dippingSauce;
+                                  // Convert enum names to display names
+                                  if (dressing === 'RANCH') dressing = 'Ranch';
+                                  if (dressing === 'BLEU_CHEESE') dressing = 'Bleu Cheese';
+                                  displayName = dressing;
+                                }
+                                
+                                return (
                                 <tr key={`${memberKey}-item-${idx}`}>
                                   <td>
-                                    <strong>{item.name}</strong>
-                                    {item.customization?.boneType && (
+                                    <strong>{displayName}</strong>
+                                    {item.customization?.boneType && item.menuItem?.customizationOptions?.requiresBoneType && (
                                       <div><small className="text-muted">&gt; {item.customization.boneType}</small></div>
                                     )}
-                                    {item.customization?.flavor && (
+                                    {item.customization?.flavor && item.menuItem?.customizationOptions?.requiresFlavor && (
                                       <div><small className="text-muted">&gt; Flavor: {item.customization.flavor.replace(/_/g, ' ')}</small></div>
                                     )}
-                                    {item.customization?.dippingSauce && (
+                                    {item.customization?.dippingSauce && item.menuItem?.customizationOptions?.requiresDippingSauce && (
                                       <div style={{ backgroundColor: '#ffeb9c', padding: '2px 4px', marginTop: '2px' }}>
                                         <small><strong>&gt; DIP: {item.customization.dippingSauce.replace(/_/g, ' ').toUpperCase()}</strong></small>
                                       </div>
                                     )}
-                                    {item.customization?.friesExchange && (
+                                    {item.customization?.friesExchange && item.menuItem?.customizationOptions?.allowFriesExchange && (
                                       <div><small className="text-muted">&gt; Side: {item.customization.friesExchange.name}</small></div>
                                     )}
-                                    {item.customization?.saladType && (
+                                    {item.customization?.saladType && item.menuItem?.customizationOptions?.requiresSaladChoice && (
                                       <div><small className="text-muted">&gt; Salad: {item.customization.saladType}</small></div>
                                     )}
-                                    {item.customization?.drink && (
+                                    {item.customization?.drink && item.menuItem?.customizationOptions?.requiresBeverage && (
                                       <div><small className="text-muted">&gt; Drink: {item.customization.drink}</small></div>
                                     )}
                                   </td>
@@ -918,7 +979,8 @@ const OrdersPage: React.FC = () => {
                                   <td>RM {(item.price || 0).toFixed(2)}</td>
                                   <td><strong>RM {(item.subtotal || 0).toFixed(2)}</strong></td>
                                 </tr>
-                              ))}
+                                );
+                              })}
                             </React.Fragment>
                           );
                         })}

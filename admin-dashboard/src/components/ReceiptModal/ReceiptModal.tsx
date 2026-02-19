@@ -912,8 +912,15 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, toggle, order }) =>
               {order.paymentStatus === 'paid' && (
                 <div className="paid-stamp">*** P A I D ***</div>
               )}
-              {order.paymentMethod && (
-                <div className="payment-info">Pay Method: {order.paymentMethod}</div>
+              {(order.paymentType || order.paymentMethod) && (
+                <div className="payment-info">Pay Method: {(() => {
+                  const payment = order.paymentType || order.paymentMethod;
+                  if (payment.toLowerCase() === 'cash') return 'Cash';
+                  if (payment.toLowerCase() === 'online') return 'Online Banking (FPX)';
+                  if (payment === 'host-pays-all' || payment === 'host-pays') return 'Host Pays All';
+                  if (payment === 'individual') return 'Individual Payment';
+                  return payment;
+                })()}</div>
               )}
             </div>
           )}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { authService } from './services/auth';
 import { notificationService } from './services/notifications';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
@@ -12,11 +12,12 @@ import SeedMenuPage from './pages/SeedMenuPage';
 import AvailabilityPage from './pages/AvailabilityPage';
 import SettingsPage from './pages/SettingsPage';
 import BannersPage from './pages/BannersPage';
+import ReviewsPage from './pages/ReviewsPage';
 import Sidebar from './components/Sidebar/Sidebar';
 import Header from './components/Header/Header';
 import ToastNotification from './components/ToastNotification/ToastNotification';
 
-type Page = 'dashboard' | 'menu' | 'orders' | 'users' | 'seed' | 'availability' | 'settings' | 'banners';
+type Page = 'dashboard' | 'menu' | 'orders' | 'users' | 'seed' | 'availability' | 'settings' | 'banners' | 'reviews';
 
 interface ToastData {
   show: boolean;
@@ -123,6 +124,8 @@ function App() {
         return <SettingsPage />;
       case 'banners':
         return <BannersPage />;
+      case 'reviews':
+        return <ReviewsPage />;
       default:
         return <DashboardPage onNavigate={(page) => setCurrentPage(page as Page)} />;
     }

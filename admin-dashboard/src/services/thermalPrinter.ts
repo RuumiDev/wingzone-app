@@ -90,9 +90,15 @@ export class ThermalPrinterService {
   }
 
   async printReceipt(order: any, config: ThermalPrintConfig = {}, memberData?: { name: string; cartItems: any[]; index: number; total: number }): Promise<boolean> {
+    const jobId = Math.random().toString(36).substring(7).toUpperCase();
     try {
       const receiptType = memberData ? `individual member (${memberData.name})` : 'master';
-      console.log(`[QZ Tray] Starting ${receiptType} print job...`);
+      const timestamp = new Date().toISOString();
+      console.log(`\n========== PRINT JOB START [${jobId}] ==========`);
+      console.log(`[QZ Tray ${timestamp}] Starting ${receiptType} print job...`);
+      console.log(`[QZ Tray] JOB ID: ${jobId}`);
+      console.log(`[QZ Tray] CODE VERSION: 2025-02-17-v3 (with RANCH/BLEU fix)`);
+      console.log(`[QZ Tray] Order ID: ${order.id?.substring(0, 8)}`);
       console.log('[QZ Tray] Order data:', {
         location: order.location,
         selectedLocation: order.selectedLocation,
@@ -141,20 +147,23 @@ export class ThermalPrinterService {
       const commands = this.generateReceiptCommands(order, config.paperWidth || 80, memberData);
       console.log('[QZ Tray] Generated', commands.length, 'commands');
 
-      // Configure print job
-      const printConfig = qz.configs.create(printerName);
+      // Configure print job with explicit copies: 1 to prevent duplicate printing
+      const printConfig = qz.configs.create(printerName, { copies: 1 });
+      console.log(`[QZ Tray JOB ${jobId}] Print config: printer="${printerName}", copies=1`);
 
       // Print receipt (no separate logo job to avoid paper cut)
-      console.log('[QZ Tray] Printing receipt...');
+      console.log(`[QZ Tray JOB ${jobId}] Sending print command to QZ Tray...`);
       await qz.print(printConfig, commands);
-      console.log('[QZ Tray] ✓ Print job completed successfully');
+      console.log(`[QZ Tray JOB ${jobId}] ✓ Print job completed successfully`);
+      console.log(`========== PRINT JOB END [${jobId}] ==========\n`);
       return true;
     } catch (error) {
-      console.error('[QZ Tray] ✗ Print failed:', error);
+      console.error(`[QZ Tray JOB ${jobId}] ✗ Print failed:`, error);
       if (error instanceof Error) {
         console.error('[QZ Tray] Error message:', error.message);
         console.error('[QZ Tray] Error stack:', error.stack);
       }
+      console.log(`========== PRINT JOB FAILED [${jobId}] ==========\n`);
       return false;
     }
   }
@@ -164,8 +173,9 @@ export class ThermalPrinterService {
     const ESC = '\x1B';
     const GS = '\x1D';
     
-    // Initialize printer
-    commands.push(`${ESC}@`); // Initialize
+    // CRITICAL: Clear printer buffer and cancel any pending jobs
+    commands.push(`${ESC}@`); // Initialize/Reset printer (clears buffer)
+    commands.push(`${ESC}@`); // Send twice to ensure buffer is cleared
     commands.push(`${ESC}a\x01`); // Center align
     
     // WINGZONE branding with branch address based on location
@@ -248,8 +258,20 @@ export class ThermalPrinterService {
       }
       
       // Payment Method
-      if (order.paymentMethod) {
-        const payment = order.paymentMethod === 'host-pays-all' || order.paymentMethod === 'host-pays' ? 'HOST PAYS ALL' : 'INDIVIDUAL PAYMENT';
+      if (order.paymentType || order.paymentMethod) {
+        const paymentValue = order.paymentType || order.paymentMethod;
+        let payment;
+        if (paymentValue.toLowerCase() === 'cash') {
+          payment = 'CASH';
+        } else if (paymentValue.toLowerCase() === 'online') {
+          payment = 'ONLINE BANKING (FPX)';
+        } else if (paymentValue === 'host-pays-all' || paymentValue === 'host-pays') {
+          payment = 'HOST PAYS ALL';
+        } else if (paymentValue === 'individual') {
+          payment = 'INDIVIDUAL PAYMENT';
+        } else {
+          payment = paymentValue.toUpperCase();
+        }
         commands.push(`PAYMENT: ${payment}\n`);
       }
       
@@ -300,11 +322,51 @@ export class ThermalPrinterService {
     
     // Items - use memberData.cartItems for individual receipts
     const itemsToShow = memberData ? memberData.cartItems : order.items;
-    if (itemsToShow) {
-      order.items.forEach((item: any) => {
+    if (itemsToShow && itemsToShow.length > 0) {
+      itemsToShow.forEach((item: any) => {
         const qty = item.quantity || 1;
         let name = item.menuItem?.name || item.menuItemName || item.name || 'ITEM';
         const itemPrice = item.menuItem?.price || item.price || 0;
+        
+        console.log('[RECEIPT ITEM]', {
+          originalName: name,
+          hasCustomization: !!item.customization,
+          saladType: item.customization?.saladType,
+          dippingSauce: item.customization?.dippingSauce,
+          dippingSauceType: typeof item.customization?.dippingSauce,
+          requiresSaladChoice: item.menuItem?.customizationOptions?.requiresSaladChoice,
+          customizationOptions: item.menuItem?.customizationOptions,
+          allCustomizationKeys: item.customization ? Object.keys(item.customization) : []
+        });
+        
+        // Add salad type for items that require salad choice (like Entree 9)
+        if (item.customization?.saladType && item.menuItem?.customizationOptions?.requiresSaladChoice) {
+          name += ` (${item.customization.saladType})`;
+          console.log('[SALAD APPEND] Added salad type:', name);
+        }
+        
+        // Add dressing choice for Ranch or Bleu Cheese items
+        console.log('[RANCH CHECK] Checking if name includes ranch or bleu:', name.toLowerCase(), 'dippingSauce:', item.customization?.dippingSauce);
+        if (name.toLowerCase().includes('ranch or bleu cheese')) {
+          console.log('[RANCH ITEM FOUND] Has dippingSauce:', !!item.customization?.dippingSauce, 'Value:', item.customization?.dippingSauce);
+          if (item.customization?.dippingSauce) {
+            // Extract dressing name - handle both string enum names and objects
+            let dressing = typeof item.customization.dippingSauce === 'string' 
+              ? item.customization.dippingSauce
+              : (item.customization.dippingSauce.displayName || item.customization.dippingSauce.name || 'Dressing');
+            
+            console.log('[RANCH EXTRACT] Extracted dressing:', dressing, 'Type:', typeof dressing);
+            
+            // Convert enum names to display names
+            if (dressing === 'RANCH') dressing = 'Ranch';
+            if (dressing === 'BLEU_CHEESE') dressing = 'Bleu Cheese';
+            
+            name = dressing; // Replace with selected dressing
+            console.log('[DRESSING REPLACE] Replaced with:', name, 'from', item.customization.dippingSauce);
+          } else {
+            console.warn('[RANCH WARNING] Ranch/Bleu Cheese item has NO dippingSauce field!');
+          }
+        }
         
         // Add (COMBO) label for zero-price items
         if (itemPrice === 0) {
@@ -323,13 +385,18 @@ export class ThermalPrinterService {
           if (item.customization.entrees && item.customization.entrees.length > 0) {
             item.customization.entrees.forEach((entree: any, eIdx: number) => {
               commands.push(`> Entree ${eIdx + 1}: ${entree.name || 'Wings'}\n`);
-              if (entree.boneType) {
+              // Only show bone type if item requires it
+              if (entree.boneType && item.menuItem?.customizationOptions?.requiresBoneType) {
                 commands.push(`  - ${entree.boneType}\n`);
               }
               // Only show flavor if the menu item requires it
               if (entree.flavor && String(entree.flavor).toUpperCase() !== 'NONE' && 
                   item.menuItem?.customizationOptions?.requiresFlavor) {
-                commands.push(`  - Flavor: ${entree.flavor}\n`);
+                // Convert enum name to display name (e.g., BUFFALO_WING -> Buffalo Wing)
+                let flavorDisplay = typeof entree.flavor === 'string'
+                  ? entree.flavor.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
+                  : (entree.flavor.displayName || entree.flavor.name || entree.flavor);
+                commands.push(`  - Flavor: ${flavorDisplay}\n`);
               }
               // Only show dipping sauce if menu item requires it
               if (entree.dippingSauce && String(entree.dippingSauce).toUpperCase() !== 'NONE' &&
@@ -339,7 +406,8 @@ export class ThermalPrinterService {
               if (entree.friesExchange) {
                 commands.push(`  - Side: ${entree.friesExchange.name}\n\n`);
               }
-              if (entree.drink) {
+              // Only show drink if item requires it
+              if (entree.drink && item.menuItem?.customizationOptions?.requiresBeverage) {
                 const drinkName = typeof entree.drink === 'string'
                   ? entree.drink
                   : entree.drink.displayName || entree.drink.name;
@@ -351,13 +419,18 @@ export class ThermalPrinterService {
           }
           
           // Single item customization
-          if (item.customization.boneType) {
+          // Only show bone type if item requires it
+          if (item.customization.boneType && item.menuItem?.customizationOptions?.requiresBoneType) {
             commands.push(`> ${item.customization.boneType}\n`);
           }
           // Only show flavor if menu item requires it
           if (item.customization.flavor && String(item.customization.flavor).toUpperCase() !== 'NONE' &&
               item.menuItem?.customizationOptions?.requiresFlavor) {
-            commands.push(`> Flavor: ${item.customization.flavor}\n`);
+            // Convert enum name to display name (e.g., BUFFALO_WING -> Buffalo Wing)
+            let flavorDisplay = typeof item.customization.flavor === 'string'
+              ? item.customization.flavor.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
+              : (item.customization.flavor.displayName || item.customization.flavor.name || item.customization.flavor);
+            commands.push(`> Flavor: ${flavorDisplay}\n`);
           }
           // Only show dipping sauce if menu item requires it
           if (item.customization.dippingSauce && String(item.customization.dippingSauce).toUpperCase() !== 'NONE' &&
@@ -367,7 +440,8 @@ export class ThermalPrinterService {
           if (item.customization.sideDish) {
             commands.push(`> Side: ${item.customization.sideDish}\n`);
           }
-          if (item.customization.saladType) {
+          // Only show salad type if item requires it
+          if (item.customization.saladType && item.menuItem?.customizationOptions?.requiresSaladChoice) {
             commands.push(`> Salad: ${item.customization.saladType}\n`);
           }
           if (item.customization.friesExchange) {
@@ -387,7 +461,8 @@ export class ThermalPrinterService {
             }
             commands.push(side + '\n');
           }
-          if (item.customization.drink) {
+          // Only show drink if item requires it
+          if (item.customization.drink && item.menuItem?.customizationOptions?.requiresBeverage) {
             const drink = typeof item.customization.drink === 'string' 
               ? item.customization.drink 
               : item.customization.drink.displayName || item.customization.drink.name;
@@ -477,23 +552,48 @@ export class ThermalPrinterService {
           commands.push(`\n[BOX ${index + 1}] - ${member.name.toUpperCase()}\n`);
           
           member.cartItems?.forEach((item: any) => {
-            const itemName = item.menuItem?.name || item.menuItemName || item.name || 'ITEM';
+            let itemName = item.menuItem?.name || item.menuItemName || item.name || 'ITEM';
+            
+            // Add salad type for items that require salad choice
+            if (item.customization?.saladType && item.menuItem?.customizationOptions?.requiresSaladChoice) {
+              itemName += ` (${item.customization.saladType})`;
+            }
+            
+            // Add dressing choice for Ranch or Bleu Cheese items  
+            if (itemName.toLowerCase().includes('ranch or bleu cheese') && item.customization?.dippingSauce) {
+              // Extract dressing name - handle both string enum names and objects
+              let dressing = typeof item.customization.dippingSauce === 'string'
+                ? item.customization.dippingSauce
+                : (item.customization.dippingSauce.displayName || item.customization.dippingSauce.name || 'Dressing');
+              
+              // Convert enum names to display names
+              if (dressing === 'RANCH') dressing = 'Ranch';
+              if (dressing === 'BLEU_CHEESE') dressing = 'Bleu Cheese';
+              
+              itemName = dressing; // Replace with selected dressing
+            }
+            
             commands.push(`${ESC}!\x10`); // Bold
             commands.push(`${item.quantity}x ${itemName}\n`);
             commands.push(`${ESC}!\x00`); // Normal
             
             if (item.customization) {
+              const customizationOptions = item.menuItem?.customizationOptions;
+              
               // Show entree details for combos
               if (item.customization.entrees && item.customization.entrees.length > 0) {
                 item.customization.entrees.forEach((entree: any, eIdx: number) => {
                   commands.push(` - Entree ${eIdx + 1}: ${entree.name || 'Wings'}\n`);
-                  if (entree.boneType) {
+                  // Only show bone type if item requires it
+                  if (entree.boneType && customizationOptions?.requiresBoneType) {
                     commands.push(`    - ${entree.boneType}\n`);
                   }
-                  if (entree.flavor) {
+                  // Only show flavor if item requires it
+                  if (entree.flavor && customizationOptions?.requiresFlavor) {
                     commands.push(`    - Flavor: ${entree.flavor}\n`);
                   }
-                  if (entree.dippingSauce) {
+                  // Only show dipping sauce if item requires it
+                  if (entree.dippingSauce && customizationOptions?.requiresDippingSauce) {
                     commands.push(`    - DIP: ${entree.dippingSauce.toUpperCase()} \n`);
                   }
                   if (entree.friesExchange) {
@@ -503,14 +603,21 @@ export class ThermalPrinterService {
               }
               
               // Single item customization
-              if (item.customization.boneType) {
+              // Only show bone type if item requires it
+              if (item.customization.boneType && customizationOptions?.requiresBoneType) {
                 commands.push(` - ${item.customization.boneType}\n`);
               }
-              if (item.customization.flavor) {
+              // Only show flavor if item requires it
+              if (item.customization.flavor && customizationOptions?.requiresFlavor) {
                 commands.push(` - Flavor: ${item.customization.flavor}\n`);
               }
-              if (item.customization.dippingSauce) {
+              // Only show dipping sauce if item requires it
+              if (item.customization.dippingSauce && customizationOptions?.requiresDippingSauce) {
                 commands.push(` - DIP: ${item.customization.dippingSauce.toUpperCase()}\n`);
+              }
+              // Only show salad type if item requires it
+              if (item.customization.saladType && customizationOptions?.requiresSaladChoice) {
+                commands.push(` - Salad: ${item.customization.saladType}\n`);
               }
               if (item.customization.sideDish) {
                 commands.push(` - Side: ${item.customization.sideDish}\n`);
@@ -518,7 +625,8 @@ export class ThermalPrinterService {
               if (item.customization.friesExchange) {
                 commands.push(` - Side: ${item.customization.friesExchange.name}\n`);
               }
-              if (item.customization.drink && item.customization.drink.displayName) {
+              // Only show drink if item requires it
+              if (item.customization.drink && item.customization.drink.displayName && customizationOptions?.requiresBeverage) {
                 commands.push(` - DRINK: ${item.customization.drink.displayName}\n`);
               }
             }
@@ -626,7 +734,7 @@ export class ThermalPrinterService {
     
     items.forEach((item: any, index: number) => {
       console.log(`[KITCHEN SUMMARY] Item ${index}:`, {
-        name: item.menuItemName || item.name,
+        name: item.menuItem?.name || item.menuItemName || item.name,
         hasMenuItem: !!item.menuItem,
         hasKitchenIngredients: !!item.kitchenIngredients,
         menuItemHasKitchen: !!item.menuItem?.kitchenIngredients,
@@ -644,10 +752,25 @@ export class ThermalPrinterService {
       const entrees = item.customization?.entrees;
       const itemName = (item.menuItem?.name || item.menuItemName || item.name || '').toLowerCase();
       
-      // Skip Ranch or Bleu Cheese items - they are dipping sauces, not food
-      if (itemName.includes('ranch') || itemName.includes('bleu') || itemName.includes('blue cheese')) {
-        console.log(`[KITCHEN SUMMARY] Skipping dipping sauce item: ${itemName}`);
-        return;
+      // Handle Ranch or Bleu Cheese items specially - add to dippings based on selection
+      if (itemName.includes('ranch or bleu cheese')) {
+        const selectedDressing = item.customization?.dippingSauce || dippingSauce;
+        console.log('[KITCHEN SUMMARY] Ranch/Bleu item detected, dippingSauce:', selectedDressing, 'type:', typeof selectedDressing);
+        if (selectedDressing && String(selectedDressing).toUpperCase() !== 'NONE') {
+          // Extract name - handle string enum names and objects
+          let dressingName = typeof selectedDressing === 'string'
+            ? selectedDressing
+            : (selectedDressing.displayName || selectedDressing.name || String(selectedDressing));
+          
+          // Convert enum names to display names
+          if (dressingName === 'RANCH') dressingName = 'Ranch';
+          if (dressingName === 'BLEU_CHEESE') dressingName = 'Bleu Cheese';
+          
+          const normalizedDressing = normalizeKey(dressingName);
+          dippingsItems[normalizedDressing] = (dippingsItems[normalizedDressing] || 0) + itemQty;
+          console.log(`[KITCHEN SUMMARY] Added ${normalizedDressing} to dippings (count: ${dippingsItems[normalizedDressing]})`);
+        }
+        return; // Skip further processing for this item
       }
       
       console.log(`[KITCHEN SUMMARY] Item ${index} extracted data:`, {

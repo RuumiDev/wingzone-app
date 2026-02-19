@@ -27,10 +27,13 @@ import coil.compose.AsyncImage
 import wingzone.zenith.R
 import wingzone.zenith.data.models.CartItem
 import wingzone.zenith.data.repository.FirebaseOrderRepository
+import wingzone.zenith.ui.components.SvgIcon
 import wingzone.zenith.ui.theme.*
 import wingzone.zenith.viewmodel.AuthViewModel
 import wingzone.zenith.viewmodel.CartViewModel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -44,13 +47,16 @@ fun CartScreen(
     onAuthRequired: () -> Unit = {},
     onCheckoutClick: () -> Unit = {},
     onOrderPlaced: (String) -> Unit = {},
-    onPaymentComplete: () -> Unit = {}
+    onPaymentComplete: () -> Unit = {},
+    onNavigateToPayment: (String) -> Unit = {}, // Navigate to payment webview with pendingOrderId
+    onNavigateToOrderDetails: (String) -> Unit = {} // Navigate to order tracking with orderId
 ) {
     val cart by cartViewModel.cart.collectAsState()
     val currentUser by authViewModel.currentUser.collectAsState()
     val isAuthenticated = authViewModel.isAuthenticated()
     val coroutineScope = rememberCoroutineScope()
     val orderRepository = remember { FirebaseOrderRepository() }
+    val context = androidx.compose.ui.platform.LocalContext.current
     
     // Check if user has already paid in current lobby
     var userHasPaid by remember { mutableStateOf(false) }
@@ -76,9 +82,17 @@ fun CartScreen(
                     val currentMember = members.find { it["userId"] == currentUser?.id }
                     userHasPaid = currentMember?.get("hasPaid") as? Boolean ?: false
                     lobbyPaymentMethod = lobbyDoc.getString("paymentMethod")
+                } else {
+                    // Lobby doesn't exist anymore - clear the lobby state
+                    lobbyViewModel?.clearCurrentLobby()
+                    userHasPaid = false
+                    lobbyPaymentMethod = null
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                // On error, assume no lobby and clear state
+                userHasPaid = false
+                lobbyPaymentMethod = null
             }
         } else {
             userHasPaid = false
@@ -88,7 +102,10 @@ fun CartScreen(
     
     var selectedOrderType by remember { mutableStateOf<String?>(null) }
     var selectedBranch by remember { mutableStateOf<String?>(null) }
-    var selectedPaymentMethod by remember { mutableStateOf("cash") }
+    // Group orders must use online payment (FPX), individual orders default to cash
+    var selectedPaymentMethod by remember(currentLobbyId) { 
+        mutableStateOf(if (currentLobbyId != null) "online" else "cash") 
+    }
     var showCheckoutDialog by remember { mutableStateOf(false) }
     var showVerificationDialog by remember { mutableStateOf(false) }
     var isProcessingOrder by remember { mutableStateOf(false) }
@@ -151,11 +168,11 @@ fun CartScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.ShoppingCart,
-                        contentDescription = null,
-                        modifier = Modifier.size(80.dp),
-                        tint = Color.Gray.copy(alpha = 0.3f)
+                    SvgIcon(
+                        assetPath = "icons/cart.svg",
+                        contentDescription = "Empty cart",
+                        tint = Color.Gray.copy(alpha = 0.3f),
+                        size = 80.dp
                     )
                     Text(
                         text = "Your cart is empty",
@@ -217,30 +234,51 @@ fun CartScreen(
                     item {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3CD))
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color(0xFFFFF8E1)
+                            ),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(16.dp),
+                                    .padding(20.dp),
                                 horizontalArrangement = Arrangement.Center,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Info,
-                                    contentDescription = null,
-                                    tint = Color(0xFFFFA000),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Host will cover the entire group order",
-                                    fontSize = 14.sp,
-                                    color = Color(0xFF856404),
-                                    textAlign = TextAlign.Center,
-                                    fontWeight = FontWeight.Medium
-                                )
+                                Surface(
+                                    color = Color(0xFFFFA000).copy(alpha = 0.15f),
+                                    shape = androidx.compose.foundation.shape.CircleShape,
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Info,
+                                            contentDescription = null,
+                                            tint = Color(0xFFFFA000),
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "Host Pays for All",
+                                        fontSize = 16.sp,
+                                        color = Color(0xFF856404),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Host will cover the entire group order",
+                                        fontSize = 14.sp,
+                                        color = Color(0xFF856404).copy(alpha = 0.8f),
+                                        fontWeight = FontWeight.Normal
+                                    )
+                                }
                             }
                         }
                     }
@@ -338,7 +376,10 @@ fun CartScreen(
                 if (currentLobbyId != null && !userHasPaid) {
                     item {
                         TextButton(
-                            onClick = { /* onBackClick or navigate to menu */ },
+                            onClick = { 
+                                // Navigate to menu to add more items
+                                onCheckoutClick() // This will trigger navigation
+                            },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(
@@ -349,7 +390,7 @@ fun CartScreen(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Add another order",
+                                text = "Add items from menu",
                                 color = WingZoneRed,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Medium
@@ -370,14 +411,83 @@ fun CartScreen(
                         )
                     }
                     
+                    // Cash Payment Option (Individual orders only, not for group orders)
+                    if (currentLobbyId == null) {
+                        item {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedPaymentMethod = "cash" },
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (selectedPaymentMethod == "cash") 
+                                        Color(0xFFFFF3E0) else Color.White
+                                ),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                                border = if (selectedPaymentMethod == "cash") 
+                                    androidx.compose.foundation.BorderStroke(2.dp, WingZoneOrange) 
+                                    else null
+                            ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    SvgIcon(
+                                        assetPath = "icons/payment/cash.svg",
+                                        contentDescription = "Cash",
+                                        size = 24.dp,
+                                        tint = if (selectedPaymentMethod == "cash") 
+                                            WingZoneOrange else Color(0xFF757575)
+                                    )
+                                    Column {
+                                        Text(
+                                            text = "Cash",
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = TextPrimary
+                                        )
+                                        Text(
+                                            text = "Pay at counter",
+                                            fontSize = 12.sp,
+                                            color = TextSecondary
+                                        )
+                                    }
+                                }
+                                if (selectedPaymentMethod == "cash") {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = WingZoneOrange
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    } // End cash payment option for individual orders only
+                    
+                    // Online Banking Option
                     item {
+                        Spacer(modifier = Modifier.height(8.dp))
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { /* Open payment method selector */ },
+                                .clickable { selectedPaymentMethod = "online" },
                             shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (selectedPaymentMethod == "online") 
+                                    Color(0xFFE3F2FD) else Color.White
+                            ),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                            border = if (selectedPaymentMethod == "online") 
+                                androidx.compose.foundation.BorderStroke(2.dp, Color(0xFF1976D2)) 
+                                else null
                         ) {
                             Row(
                                 modifier = Modifier
@@ -390,10 +500,12 @@ fun CartScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = null,
-                                        tint = Color(0xFF1976D2)
+                                    SvgIcon(
+                                        assetPath = "icons/payment/card.svg",
+                                        contentDescription = "Online Banking",
+                                        size = 24.dp,
+                                        tint = if (selectedPaymentMethod == "online") 
+                                            Color(0xFF1976D2) else Color(0xFF757575)
                                     )
                                     Column {
                                         Text(
@@ -409,11 +521,13 @@ fun CartScreen(
                                         )
                                     }
                                 }
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = null,
-                                    tint = Color(0xFF4CAF50)
-                                )
+                                if (selectedPaymentMethod == "online") {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = Color(0xFF1976D2)
+                                    )
+                                }
                             }
                         }
                     }
@@ -494,8 +608,81 @@ fun CartScreen(
                     val isInLobby = currentLobbyId != null
                     val isHostPaysAll = lobbyPaymentMethod == "host-pays-all"
                     
-                    // Only show button if not host-pays-all and user hasn't paid
-                    if (!isHostPaysAll && !userHasPaid) {
+                    // Show "Mark as Ready" button for host-pays-all, or regular pay button otherwise
+                    if (isHostPaysAll && !userHasPaid) {
+                        // Host pays all - show "Mark as Ready" button
+                        Button(
+                            onClick = {
+                                if (!isAuthenticated) {
+                                    onAuthRequired()
+                                } else if (currentUser?.isPhoneVerified == false) {
+                                    showVerificationDialog = true
+                                } else if (isInLobby && currentUser?.id != null) {
+                                    // Mark as ready in lobby
+                                    isProcessingOrder = true
+                                    coroutineScope.launch {
+                                        try {
+                                            val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                                            val lobbyRef = firestore.collection("lobbies").document(currentLobbyId!!)
+                                            val lobbyDoc = lobbyRef.get().await()
+                                            
+                                            if (lobbyDoc.exists()) {
+                                                @Suppress("UNCHECKED_CAST")
+                                                val members = lobbyDoc.get("members") as? MutableList<MutableMap<String, Any>> ?: mutableListOf()
+                                                val memberIndex = members.indexOfFirst { it["userId"] == currentUser?.id }
+                                                
+                                                if (memberIndex != -1) {
+                                                    members[memberIndex]["hasPaid"] = true
+                                                    lobbyRef.update("members", members).await()
+                                                    userHasPaid = true
+                                                }
+                                            }
+                                            isProcessingOrder = false
+                                        } catch (e: Exception) {
+                                            isProcessingOrder = false
+                                        }
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(64.dp),
+                            enabled = !isProcessingOrder && cart.items.isNotEmpty(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF10B981),
+                                disabledContainerColor = Color(0xFFE5E5E5)
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            elevation = ButtonDefaults.buttonElevation(
+                                defaultElevation = 3.dp,
+                                pressedElevation = 6.dp
+                            )
+                        ) {
+                            if (isProcessingOrder) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = Color.White
+                                )
+                            } else {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Mark as Ready",
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    } else if (!isHostPaysAll && !userHasPaid) {
                         Button(
                             onClick = {
                                 if (!isAuthenticated) {
@@ -548,6 +735,37 @@ fun CartScreen(
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
+                            }
+                        }
+                    } else if (!isHostPaysAll && userHasPaid) {
+                        // User has already paid in individual mode - show disabled button
+                        Button(
+                            onClick = { },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                            enabled = false,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF4CAF50),
+                                disabledContainerColor = Color(0xFFB0BEC5)
+                            ),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Payment Completed",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
                     }
@@ -723,12 +941,16 @@ fun CartScreen(
                             Icon(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = null,
-                                tint = Color(0xFF1976D2),
+                                tint = if (selectedPaymentMethod == "cash") WingZoneOrange else Color(0xFF1976D2),
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Payment via Online Banking (FPX)",
+                                text = when (selectedPaymentMethod) {
+                                    "cash" -> "Payment via Cash at Counter"
+                                    "online" -> "Payment via Online Banking (FPX)"
+                                    else -> "Payment via ${selectedPaymentMethod.replaceFirstChar { it.uppercase() }}"
+                                },
                                 fontSize = 13.sp,
                                 color = TextSecondary
                             )
@@ -777,30 +999,79 @@ fun CartScreen(
                                     }
                                 } else {
                                     // Individual order (not in lobby)
-                                    val result = orderRepository.createOrder(
-                                        userId = currentUser?.id ?: "",
-                                        userName = currentUser?.name ?: "Guest",
-                                        cart = cart,
-                                        paymentMethod = selectedPaymentMethod,
-                                        phoneNumber = currentUser?.email,
-                                        orderType = selectedOrderType,
-                                        location = selectedBranch,
-                                        lobbyPaymentMethod = null
-                                    )
-                                
-                                    result.onSuccess { orderId ->
-                                        orderSuccess = true
-                                        placedOrderId = orderId
-                                        // Clear cart and show notification
-                                        kotlinx.coroutines.delay(500)
-                                        cartViewModel.clearCart()
-                                        showCheckoutDialog = false
-                                        orderSuccess = false
-                                        isProcessingOrder = false
-                                        onOrderPlaced(orderId)
-                                    }.onFailure { error ->
-                                        orderError = error.message
-                                        isProcessingOrder = false
+                                    // Split logic based on payment method
+                                    if (selectedPaymentMethod == "cash") {
+                                        // Cash payment: DB write on IO, all UI/nav on Main
+                                        try {
+                                            // 1. Write order on IO thread
+                                            val result = withContext(Dispatchers.IO) {
+                                                orderRepository.createOrder(
+                                                    userId = currentUser?.id ?: "",
+                                                    userName = currentUser?.name ?: "Guest",
+                                                    cart = cart,
+                                                    paymentMethod = "cash",
+                                                    phoneNumber = currentUser?.phoneNumber,
+                                                    orderType = selectedOrderType,
+                                                    location = selectedBranch,
+                                                    lobbyPaymentMethod = null,
+                                                    paymentType = "cash",
+                                                    // "pending" = admin must confirm before kitchen starts
+                                                    initialStatus = "pending",
+                                                    initialPaymentStatus = "unpaid"
+                                                )
+                                            }
+
+                                            // 2. All UI state + navigation strictly on Main
+                                            withContext(Dispatchers.Main) {
+                                                result.fold(
+                                                    onSuccess = { orderId ->
+                                                        android.util.Log.d("CartScreen", "Cash order created: $orderId")
+                                                        cartViewModel.clearCart()
+                                                        showCheckoutDialog = false
+                                                        isProcessingOrder = false
+                                                        onNavigateToOrderDetails(orderId)
+                                                    },
+                                                    onFailure = { error ->
+                                                        android.util.Log.e("CartScreen", "Cash order creation failed", error)
+                                                        orderError = error.message ?: "Failed to place order"
+                                                        isProcessingOrder = false
+                                                    }
+                                                )
+                                            }
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("CartScreen", "Unexpected crash during cash checkout", e)
+                                            withContext(Dispatchers.Main) {
+                                                orderError = "Unexpected error: ${e.message}"
+                                                isProcessingOrder = false
+                                            }
+                                        }
+                                    } else {
+                                        // Online Banking/FPX: Store pending order and redirect to payment gateway
+                                        try {
+                                            // Store pending order (payment URL will be created later in MainActivity)
+                                            val pendingOrderId = wingzone.zenith.utils.PendingOrderManager.storePendingOrder(
+                                                context = context,
+                                                userId = currentUser?.id ?: "",
+                                                userName = currentUser?.name ?: "Guest",
+                                                userEmail = currentUser?.email,
+                                                cart = cart,
+                                                paymentMethod = selectedPaymentMethod,
+                                                paymentType = "online",
+                                                phoneNumber = currentUser?.phoneNumber,
+                                                orderType = selectedOrderType,
+                                                location = selectedBranch,
+                                                lobbyId = null,
+                                                paymentUrl = null // Will be created on-demand
+                                            )
+                                            
+                                            // Close dialog and navigate to payment gateway
+                                            showCheckoutDialog = false
+                                            isProcessingOrder = false
+                                            onNavigateToPayment(pendingOrderId)
+                                        } catch (e: Exception) {
+                                            orderError = "Failed to initiate payment: ${e.message}"
+                                            isProcessingOrder = false
+                                        }
                                     }
                                 }
                             }
@@ -818,7 +1089,11 @@ fun CartScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (isInLobby) "Proceed to Payment" else "Proceed to Pay",
+                            text = when {
+                                isInLobby -> "Proceed to Payment"
+                                selectedPaymentMethod == "cash" -> "Place Order"
+                                else -> "Proceed to Payment Gateway"
+                            },
                             fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -1000,25 +1275,53 @@ fun CartItemCardRedesigned(
                 
                 // Customization Details
                 if (cartItem.customization != null) {
+                    val customizationOptions = cartItem.menuItem.customizationOptions
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        if (cartItem.customization.boneType != null) {
+                        // Only show bone type if item requires it
+                        if (customizationOptions?.requiresBoneType == true && cartItem.customization.boneType != null) {
                             Text(
                                 text = cartItem.customization.boneType.toString(),
                                 fontSize = 12.sp,
                                 color = if (enabled) TextSecondary else Color.LightGray
                             )
                         }
-                        Text(
-                            text = "Flavor: ${cartItem.customization.flavor.displayName}",
-                            fontSize = 12.sp,
-                            color = if (enabled) TextSecondary else Color.LightGray
-                        )
-                        Text(
-                            text = "Sauce: ${cartItem.customization.dippingSauce.displayName}",
-                            fontSize = 12.sp,
-                            color = if (enabled) TextSecondary else Color.LightGray
-                        )
-                        if (cartItem.customization.drink.displayName != "None") {
+                        // Only show flavor if item requires it
+                        if (customizationOptions?.requiresFlavor == true) {
+                            Text(
+                                text = "Flavor: ${cartItem.customization.flavor.displayName}",
+                                fontSize = 12.sp,
+                                color = if (enabled) TextSecondary else Color.LightGray
+                            )
+                        }
+                        // Only show salad type if item requires it
+                        if (customizationOptions?.requiresSaladChoice == true && cartItem.customization.saladType != null) {
+                            Text(
+                                text = "Salad: ${cartItem.customization.saladType}",
+                                fontSize = 12.sp,
+                                color = if (enabled) TextSecondary else Color.LightGray
+                            )
+                        }
+                        // Only show dipping sauce if item requires it
+                        if (customizationOptions?.requiresDippingSauce == true) {
+                            Text(
+                                text = "Sauce: ${cartItem.customization.dippingSauce.displayName}",
+                                fontSize = 12.sp,
+                                color = if (enabled) TextSecondary else Color.LightGray
+                            )
+                        }
+                        // Show sides/fries exchange if available
+                        if (customizationOptions?.allowFriesExchange == true && cartItem.customization.friesExchange != null) {
+                            val exchange = cartItem.customization.friesExchange
+                            val sizeText = if (exchange.selectedSize == "jumbo") " (Jumbo)" else ""
+                            val flavorText = if (!exchange.selectedFlavor.isNullOrEmpty() && exchange.selectedFlavor != "None") " - ${exchange.selectedFlavor}" else ""
+                            Text(
+                                text = "Side: ${exchange.name}$sizeText$flavorText",
+                                fontSize = 12.sp,
+                                color = if (enabled) TextSecondary else Color.LightGray
+                            )
+                        }
+                        // Only show drink if item requires it
+                        if (customizationOptions?.requiresBeverage == true && cartItem.customization.drink.displayName != "None") {
                             Text(
                                 text = "Drink: ${cartItem.customization.drink.displayName}",
                                 fontSize = 12.sp,

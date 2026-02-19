@@ -14,6 +14,24 @@ service cloud.firestore {
       allow write: if false; // Admin only via console
     }
     
+    // Home Banners - Public read access for app home screen
+    match /homeBanners/{bannerId} {
+      allow read: if true;
+      allow write: if request.auth != null; // Admin only
+    }
+    
+    // Menu Items - Public read access for browsing (write restricted to admins)
+    match /menuItems/{itemId} {
+      allow read: if true;
+      allow write: if request.auth != null; // Admin only
+    }
+    
+    // Settings - Public read access for availability and app configuration
+    match /settings/{document} {
+      allow read: if true;
+      allow write: if request.auth != null; // Admin only
+    }
+    
     // Lobbies
     match /lobbies/{lobbyId} {
       // Anyone can read active lobbies
@@ -36,6 +54,26 @@ service cloud.firestore {
       function isMemberOfLobby(userId) {
         return userId in resource.data.members;
       }
+    }
+    
+    // Reviews - Public read for enabled reviews, authenticated write
+    match /reviews/{reviewId} {
+      // Public can read enabled and approved reviews
+      allow read: if resource.data.isEnabled == true 
+        && resource.data.moderationStatus == 'approved';
+      
+      // Authenticated users can create reviews for their own orders
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.isEnabled == true
+        && request.resource.data.moderationStatus == 'approved';
+      
+      // Only review owner can read their own reviews (even if disabled)
+      allow read: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+      
+      // Admins can update and delete (via admin dashboard)
+      allow update, delete: if request.auth != null;
     }
     
     // All other collections - allow authenticated access for development

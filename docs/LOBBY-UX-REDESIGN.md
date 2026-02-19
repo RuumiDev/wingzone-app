@@ -281,7 +281,7 @@ Link: https://order.wingzone.app/lobby/5A2X9K
 
 **URL Formats:**
 ```
-App Deep Link:    wingzone://lobby/join?code=5A2X9K
+App Deep Link:    wz://join?code=5A2X9K
 Web URL:          https://order.wingzone.app/lobby/5A2X9K
 ```
 
@@ -316,7 +316,7 @@ Web URL:          https://order.wingzone.app/lobby/5A2X9K
       <p>💰 Payment: Individual</p>
     </div>
     
-    <a href="wingzone://lobby/join?code=5A2X9K" 
+    <a href="wz://join?code=5A2X9K" 
        class="btn-primary">
       Open in App
     </a>

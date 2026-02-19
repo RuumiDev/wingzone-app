@@ -18,6 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -200,10 +201,10 @@ fun OrderProgressBar(status: String) {
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Order placed icon
-        ProgressIcon(
-            icon = Icons.Default.CheckCircle,
-            label = "",
+        // Order placed/confirmed icon
+        ProgressIconDrawable(
+            drawableId = wingzone.zenith.R.drawable.confirmed_received,
+            label = "Order Confirmed",
             isCompleted = true,
             isActive = status == "pending"
         )
@@ -212,9 +213,9 @@ fun OrderProgressBar(status: String) {
         ProgressLine(isCompleted = isStepCompleted(status, "confirmed"))
         
         // Preparing icon
-        ProgressIcon(
-            icon = Icons.Default.Build,
-            label = "",
+        ProgressIconDrawable(
+            drawableId = wingzone.zenith.R.drawable.preparing,
+            label = "Preparing",
             isCompleted = isStepCompleted(status, "preparing"),
             isActive = status == "confirmed" || status == "preparing"
         )
@@ -223,11 +224,58 @@ fun OrderProgressBar(status: String) {
         ProgressLine(isCompleted = isStepCompleted(status, "ready"))
         
         // Ready icon
-        ProgressIcon(
-            icon = Icons.Default.Home,
-            label = "",
+        ProgressIconDrawable(
+            drawableId = wingzone.zenith.R.drawable.ready,
+            label = "Ready",
             isCompleted = isStepCompleted(status, "ready"),
             isActive = status == "ready" || status == "delivered"
+        )
+    }
+}
+
+@Composable
+fun RowScope.ProgressIconDrawable(
+    drawableId: Int,
+    label: String,
+    isCompleted: Boolean,
+    isActive: Boolean
+) {
+    val scale by animateFloatAsState(
+        targetValue = if (isActive) 1.1f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "icon_scale"
+    )
+    
+    val backgroundColor by animateColorAsState(
+        targetValue = when {
+            isCompleted || isActive -> WingZoneRed
+            else -> Color(0xFFE0E0E0)
+        },
+        animationSpec = tween(durationMillis = 500),
+        label = "background_color"
+    )
+    
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .background(
+                color = backgroundColor,
+                shape = CircleShape
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            painter = painterResource(id = drawableId),
+            contentDescription = label,
+            tint = Color.Unspecified,
+            modifier = Modifier.size(20.dp)
         )
     }
 }
@@ -324,7 +372,7 @@ fun getStatusIllustrationIcon(status: String): ImageVector {
     return when (status.lowercase()) {
         "pending" -> Icons.Default.ShoppingCart
         "confirmed" -> Icons.Default.CheckCircle
-        "preparing" -> Icons.Default.Build
+        "preparing" -> Icons.Default.Info
         "ready" -> Icons.Default.Done
         "delivered" -> Icons.Default.CheckCircle
         else -> Icons.Default.Info

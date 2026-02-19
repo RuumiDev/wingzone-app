@@ -20,6 +20,11 @@ async function updateEntreeBeverages() {
     console.log('Updating entree beverages...\n');
     
     const entrees = [
+      { name: 'Entree 3', description: '3 pcs Chicken Tenders + Fries + Fresh Veg + Drink' },
+      { name: 'Entree 4', description: 'Premium Beef Cheeseburger + Fries + Drink' },
+      { name: 'Entree 5', description: 'Supreme Grilled Chicken Sandwich + Fries + Drink' },
+      { name: 'Entree 6', description: 'Supreme Chicken Tender Sandwich + Fries + Drink' },
+      { name: 'Entree 7', description: '2 pcs Chicken Tenders + Smiley Fries + Drink (Kid\'s Meal)' },
       { name: 'Entree 10', description: 'Supreme Grilled Chicken Tortilla + Kettle Chips + Drink' },
       { name: 'Entree 11', description: 'Supreme Chicken Tender Tortilla + Kettle Chips + Drink' },
       { name: 'Entree 12', description: 'Premium Beef Tortilla + Kettle Chips + Drink' }

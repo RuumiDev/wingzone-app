@@ -1,7 +1,16 @@
 package wingzone.zenith.ui.screens
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -9,6 +18,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -20,12 +31,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import coil.compose.AsyncImage
 import com.google.firebase.firestore.FirebaseFirestore
+import wingzone.zenith.R
 import wingzone.zenith.data.repository.Order
 import wingzone.zenith.ui.theme.*
 import java.text.SimpleDateFormat
@@ -47,6 +61,11 @@ fun OrderTrackingDetailScreen(
     var showProofDialog by remember { mutableStateOf(false) }
     var orderDetails by remember { mutableStateOf<Map<String, Any>>(emptyMap()) }
 
+    // Handle back button
+    BackHandler {
+        onBack()
+    }
+
     LaunchedEffect(orderId) {
         firestore.collection("orders")
             .document(orderId)
@@ -58,6 +77,7 @@ fun OrderTrackingDetailScreen(
 
                 try {
                     orderDetails = snapshot.data ?: emptyMap()
+                    
                     order = Order(
                         id = snapshot.id,
                         userId = snapshot.getString("userId") ?: "",
@@ -108,7 +128,7 @@ fun OrderTrackingDetailScreen(
                 modifier = Modifier.statusBarsPadding()
             )
         },
-        containerColor = BackgroundGray
+        containerColor = Color(0xFFFAF8F5) // Cream/off-white background
     ) { paddingValues ->
         if (loading) {
             Box(
@@ -135,19 +155,32 @@ fun OrderTrackingDetailScreen(
                     .padding(paddingValues)
                     .verticalScroll(rememberScrollState())
             ) {
-                // Status Header Card
-                StatusHeaderCard(order!!)
+                // Check if order is awaiting counter payment
+                if (order!!.status.equals("Pending Payment", ignoreCase = true)) {
+                    // Show E-Receipt Card for cash payment orders
+                    wingzone.zenith.ui.components.EReceiptCard(
+                        order = order!!,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    // Standard order tracking flow
+                    // Modern Hero Status Section
+                    ModernHeroStatusSection(order!!)
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    // Order Progress Timeline
+                    OrderProgressTimeline(order!!)
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Order Details Card
+                    OrderDetailsCard(order!!)
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
                 
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Order Progress Timeline
-                OrderProgressTimeline(order!!)
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Order Details Card
-                OrderDetailsCard(order!!)
-                
+                // Additional sections applicable to all orders
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 // "I'm Here" Button - Show when order is ready
@@ -155,12 +188,13 @@ fun OrderTrackingDetailScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White)
+                            .padding(horizontal = 20.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                     ) {
                         Column(
-                            modifier = Modifier.padding(20.dp),
+                            modifier = Modifier.padding(24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Icon(
@@ -185,7 +219,18 @@ fun OrderTrackingDetailScreen(
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Button(
-                                onClick = { showProofDialog = true },
+                                onClick = {
+                                    showProofDialog = true
+                                    // Mark order as delivered when user arrives
+                                    firestore.collection("orders")
+                                        .document(orderId)
+                                        .update(
+                                            mapOf(
+                                                "status" to "delivered",
+                                                "deliveredAt" to com.google.firebase.Timestamp.now()
+                                            )
+                                        )
+                                },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(56.dp),
@@ -218,6 +263,106 @@ fun OrderTrackingDetailScreen(
                 order = order!!,
                 orderDetails = orderDetails,
                 onDismiss = { showProofDialog = false }
+            )
+        }
+    }
+}
+
+@Composable
+fun ModernHeroStatusSection(order: Order) {
+    // Pulsing animation for background circle
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse_scale"
+    )
+
+    // Get status drawable based on order status (matches res/drawable IDs)
+    val statusDrawableId = when (order.status.lowercase()) {
+        "pending payment", "pending", "placed", "confirmed" ->
+            R.drawable.confirmed_received
+        "preparing" -> R.drawable.preparing
+        "ready"     -> R.drawable.ready
+        "delivered" -> R.drawable.delivered
+        else        -> R.drawable.confirmed_received  // safe fallback
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Large icon with pulsing background
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.size(160.dp)
+        ) {
+            // Pulsing background circle
+            Box(
+                modifier = Modifier
+                    .size(140.dp)
+                    .graphicsLayer {
+                        scaleX = pulseScale
+                        scaleY = pulseScale
+                        alpha = 0.3f
+                    }
+                    .background(
+                        color = WingZoneOrange,
+                        shape = CircleShape
+                    )
+            )
+
+            // Main icon — uses res/drawable, fully fills the inner area
+            Image(
+                painter = painterResource(id = statusDrawableId),
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Status title - Bold, 24sp
+        Text(
+            text = getStatusDisplayText(order.status),
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Status subtitle
+        Text(
+            text = getStatusDescription(order.status),
+            fontSize = 15.sp,
+            color = TextSecondary,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Order ID badge
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = WingZoneRed.copy(alpha = 0.1f)
+        ) {
+            Text(
+                text = "Order #${order.id.take(8).uppercase()}",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = WingZoneRed,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
     }
@@ -289,12 +434,13 @@ fun OrderProgressTimeline(order: Order) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+            .padding(horizontal = 20.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Column(
-            modifier = Modifier.padding(20.dp)
+            modifier = Modifier.padding(24.dp)
         ) {
             Text(
                 text = "Order Progress",
@@ -305,18 +451,18 @@ fun OrderProgressTimeline(order: Order) {
             
             Spacer(modifier = Modifier.height(20.dp))
             
-            val steps = listOf(
-                Triple("Order Placed", "pending", Icons.Default.ShoppingCart),
-                Triple("Confirmed", "confirmed", Icons.Default.CheckCircle),
-                Triple("Preparing", "preparing", Icons.Default.Build),
-                Triple("Ready", "ready", Icons.Default.Done),
-                Triple("Delivered", "delivered", Icons.Default.CheckCircle)
+            val steps: List<Triple<String, String, Int>> = listOf(
+                Triple("Order Placed", "pending", R.drawable.confirmed_received),
+                Triple("Confirmed", "confirmed", R.drawable.confirmed_received),
+                Triple("Preparing", "preparing", R.drawable.preparing),
+                Triple("Ready", "ready", R.drawable.ready),
+                Triple("Delivered", "delivered", R.drawable.delivered)
             )
             
-            steps.forEachIndexed { index, (title, status, icon) ->
+            steps.forEachIndexed { index, (title, status, drawableId) ->
                 TimelineStep(
                     title = title,
-                    icon = icon,
+                    drawableId = drawableId,
                     isCompleted = isStepCompleted(order.status, status),
                     isActive = order.status.equals(status, ignoreCase = true),
                     isLast = index == steps.size - 1
@@ -329,7 +475,7 @@ fun OrderProgressTimeline(order: Order) {
 @Composable
 fun TimelineStep(
     title: String,
-    icon: ImageVector,
+    drawableId: Int,
     isCompleted: Boolean,
     isActive: Boolean,
     isLast: Boolean
@@ -345,17 +491,32 @@ fun TimelineStep(
     
     val backgroundColor by animateColorAsState(
         targetValue = when {
-            isCompleted || isActive -> WingZoneRed
+            isCompleted || isActive -> Color.White
             else -> Color(0xFFE0E0E0)
         },
         animationSpec = tween(durationMillis = 600),
         label = "timeline_background"
+    )
+
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            isCompleted || isActive -> WingZoneOrange
+            else -> Color.Transparent
+        },
+        animationSpec = tween(durationMillis = 600),
+        label = "timeline_border"
     )
     
     val lineProgress by animateFloatAsState(
         targetValue = if (isCompleted) 1f else 0f,
         animationSpec = tween(durationMillis = 800, easing = FastOutSlowInEasing),
         label = "line_progress"
+    )
+    
+    val lineColor by animateColorAsState(
+        targetValue = if (isCompleted) WingZoneRed else Color(0xFFE0E0E0),
+        animationSpec = tween(durationMillis = 600),
+        label = "line_color"
     )
     
     Row(
@@ -376,15 +537,36 @@ fun TimelineStep(
                     .background(
                         color = backgroundColor,
                         shape = CircleShape
+                    )
+                    .border(
+                        width = 2.dp,
+                        color = borderColor,
+                        shape = CircleShape
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = if (isCompleted) Icons.Default.Check else icon,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
+                AnimatedContent(
+                    targetState = isCompleted to isActive,
+                    transitionSpec = {
+                        (fadeIn() + scaleIn()) togetherWith (fadeOut() + scaleOut())
+                    },
+                    label = "icon_animation"
+                ) { (completed, _) ->
+                    if (completed) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = WingZoneOrange,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    } else {
+                        Image(
+                            painter = painterResource(id = drawableId),
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
             }
             
             if (!isLast) {
@@ -392,7 +574,7 @@ fun TimelineStep(
                     modifier = Modifier
                         .width(2.dp)
                         .height(48.dp)
-                        .background(color = Color(0xFFE0E0E0))
+                        .background(color = lineColor)
                 ) {
                     Box(
                         modifier = Modifier
@@ -434,12 +616,13 @@ fun OrderDetailsCard(order: Order) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+            .padding(horizontal = 20.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Column(
-            modifier = Modifier.padding(20.dp)
+            modifier = Modifier.padding(24.dp)
         ) {
             Text(
                 text = "Order Details",
@@ -453,10 +636,10 @@ fun OrderDetailsCard(order: Order) {
             DetailRow("Total Amount", "RM ${String.format("%.2f", order.total)}")
             Spacer(modifier = Modifier.height(12.dp))
             
-            DetailRow("Payment Method", order.paymentMethod.capitalize())
+            DetailRow("Payment Method", order.paymentMethod.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() })
             Spacer(modifier = Modifier.height(12.dp))
             
-            DetailRow("Payment Status", order.paymentStatus.capitalize())
+            DetailRow("Payment Status", order.paymentStatus.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() })
             Spacer(modifier = Modifier.height(12.dp))
             
             val dateFormat = SimpleDateFormat("MMM dd, yyyy • hh:mm a", Locale.getDefault())
@@ -490,7 +673,7 @@ fun getStatusIconAndColor(status: String): Pair<ImageVector, Color> {
     return when (status.lowercase()) {
         "pending" -> Pair(Icons.Default.Info, Color(0xFFFFA726))
         "confirmed" -> Pair(Icons.Default.CheckCircle, Color(0xFF42A5F5))
-        "preparing" -> Pair(Icons.Default.Build, Color(0xFFFF7043))
+        "preparing" -> Pair(Icons.Default.Info, Color(0xFFFF7043))
         "ready" -> Pair(Icons.Default.Done, Color(0xFF66BB6A))
         "delivered" -> Pair(Icons.Default.CheckCircle, Color(0xFF4CAF50))
         "cancelled" -> Pair(Icons.Default.Close, Color(0xFFEF5350))
@@ -506,7 +689,7 @@ fun getStatusDisplayText(status: String): String {
         "ready" -> "Ready for Pickup"
         "delivered" -> "Delivered"
         "cancelled" -> "Order Cancelled"
-        else -> status.capitalize()
+        else -> status.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
     }
 }
 
@@ -530,7 +713,7 @@ fun isStepCompleted(currentStatus: String, stepStatus: String): Boolean {
 }
 
 /**
- * Modern Pickup Proof Dialog - Shown when user clicks "I'm Here"
+ * Modern Digital Receipt Dialog - Sleek Pickup Proof
  */
 @Composable
 fun OrderPickupProofDialog(
@@ -541,7 +724,11 @@ fun OrderPickupProofDialog(
     val orderType = (orderDetails["orderType"] as? String) ?: "Pickup"
     val location = (orderDetails["location"] as? String) ?: "Wingzone"
     val paymentMethod = order.paymentMethod
+    val paymentType = (orderDetails["paymentType"] as? String) ?: paymentMethod
     val paymentStatus = order.paymentStatus
+    val items = orderDetails["items"] as? List<*> ?: emptyList<Any>()
+    val firestore = FirebaseFirestore.getInstance()
+    var isDelivering by remember { mutableStateOf(false) }
     
     Dialog(
         onDismissRequest = onDismiss,
@@ -550,338 +737,379 @@ fun OrderPickupProofDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.9f))
-                .padding(20.dp),
+                .background(Color.Black.copy(alpha = 0.85f))
+                .padding(24.dp),
             contentAlignment = Alignment.Center
         ) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .wrapContentHeight(),
-                shape = RoundedCornerShape(28.dp),
+                    .verticalScroll(rememberScrollState()),
+                shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
             ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp)
                 ) {
-                    // Animated Header
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                brush = Brush.verticalGradient(
-                                    colors = listOf(
-                                        WingZoneRed,
-                                        Color(0xFFB71C1C)
-                                    )
-                                )
-                            )
-                            .padding(32.dp)
+                    // Compact Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            // Pulsing checkmark
-                            Box(
-                                modifier = Modifier
-                                    .size(96.dp)
-                                    .background(
-                                        Color.White.copy(alpha = 0.2f),
-                                        CircleShape
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Done,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(56.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "READY FOR PICKUP",
-                                fontSize = 26.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                letterSpacing = 1.sp
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Show this screen to the counter staff",
-                                fontSize = 14.sp,
-                                color = Color.White.copy(alpha = 0.95f),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                            )
-                        }
-                    }
-                    
-                    // Large Order Code
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFFFAFAFA))
-                            .padding(vertical = 28.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = "ORDER NUMBER",
-                                fontSize = 13.sp,
-                                color = TextSecondary,
-                                fontWeight = FontWeight.SemiBold,
-                                letterSpacing = 1.5.sp
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "#${order.id.take(8).uppercase()}",
-                                fontSize = 48.sp,
-                                fontWeight = FontWeight.Black,
-                                color = WingZoneRed,
-                                letterSpacing = 6.sp
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            // Enhanced barcode visual
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
-                            ) {
-                                repeat(24) { index ->
-                                    Box(
-                                        modifier = Modifier
-                                            .width(if (index % 4 == 0) 4.dp else if (index % 3 == 0) 3.dp else 2.dp)
-                                            .height(if (index % 2 == 0) 40.dp else 28.dp)
-                                            .background(
-                                                if (index % 5 == 0) WingZoneRed else Color(
-                                                    0xFF424242
-                                                ),
-                                                RoundedCornerShape(1.dp)
-                                            )
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Verification Details
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(28.dp)
-                    ) {
-                        // Payment Status - Prominent
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    if (paymentStatus.equals(
-                                            "paid",
-                                            ignoreCase = true
-                                        )
-                                    ) Color(0xFFE8F5E9) else Color(0xFFFFF3E0),
-                                    RoundedCornerShape(16.dp)
-                                )
-                                .border(
-                                    width = 2.dp,
-                                    color = if (paymentStatus.equals(
-                                            "paid",
-                                            ignoreCase = true
-                                        )
-                                    ) Color(0xFF4CAF50) else Color(0xFFFF9800),
-                                    shape = RoundedCornerShape(16.dp)
-                                )
-                                .padding(20.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text(
-                                        text = "PAYMENT STATUS",
-                                        fontSize = 12.sp,
-                                        color = TextSecondary,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = paymentStatus.uppercase(),
-                                        fontSize = 24.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (paymentStatus.equals(
-                                                "paid",
-                                                ignoreCase = true
-                                            )
-                                        ) Color(0xFF2E7D32) else Color(0xFFE65100)
-                                    )
-                                    Text(
-                                        text = "via ${paymentMethod.uppercase()}",
-                                        fontSize = 13.sp,
-                                        color = TextSecondary,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
-                                Icon(
-                                    imageVector = if (paymentStatus.equals(
-                                            "paid",
-                                            ignoreCase = true
-                                        )
-                                    ) Icons.Default.CheckCircle else Icons.Default.Warning,
-                                    contentDescription = null,
-                                    tint = if (paymentStatus.equals(
-                                            "paid",
-                                            ignoreCase = true
-                                        )
-                                    ) Color(0xFF4CAF50) else Color(0xFFFF9800),
-                                    modifier = Modifier.size(40.dp)
-                                )
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(20.dp))
-                        
-                        HorizontalDivider(color = Color(0xFFE0E0E0))
-                        
-                        Spacer(modifier = Modifier.height(20.dp))
-                        
-                        // Service Type & Location
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            // Service Type
-                            Box(
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = WingZoneOrange,
+                                modifier = Modifier.size(32.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "Pickup Confirmed",
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = "Order #${order.id.take(8).uppercase()}",
+                                    fontSize = 14.sp,
+                                    color = TextSecondary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(20.dp))
+                    
+                    // Dashed Divider
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                    ) {
+                        drawLine(
+                            color = Color(0xFFBDBDBD),
+                            start = Offset(0f, 0f),
+                            end = Offset(size.width, 0f),
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 5f), 0f),
+                            strokeWidth = 2f
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(20.dp))
+                    
+                    // Order Items Section
+                    Text(
+                        text = "Order Items",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    items.forEach { item ->
+                        val itemMap = item as? Map<*, *>
+                        // Access nested menuItem structure
+                        val menuItem = itemMap?.get("menuItem") as? Map<*, *>
+                        val itemName = menuItem?.get("name") as? String ?: ""
+                        val quantity = (itemMap?.get("quantity") as? Number)?.toInt() ?: 1
+                        val customization = itemMap?.get("customization") as? Map<*, *>
+                        
+                        if (itemName.isNotEmpty()) {
+                            Column(
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .background(
-                                        Color(0xFFF5F5F5),
-                                        RoundedCornerShape(12.dp)
-                                    )
-                                    .padding(16.dp)
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
                             ) {
-                                Column {
-                                    Text(
-                                        text = "SERVICE",
-                                        fontSize = 11.sp,
-                                        color = TextSecondary,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Text(
-                                        text = orderType.uppercase(),
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextPrimary
-                                    )
+                                // Item name and quantity
+                                Text(
+                                    text = "${quantity}x  $itemName",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = TextPrimary
+                                )
+                                
+                                // Customization details
+                                if (customization != null) {
+                                    Column(
+                                        modifier = Modifier.padding(start = 16.dp, top = 4.dp)
+                                    ) {
+                                        // Bone Type
+                                        customization["boneType"]?.let { boneType ->
+                                            if (boneType.toString().isNotEmpty()) {
+                                                Text(
+                                                    text = "• $boneType",
+                                                    fontSize = 12.sp,
+                                                    color = TextSecondary
+                                                )
+                                            }
+                                        }
+                                        
+                                        // Flavor
+                                        customization["flavor"]?.let { flavor ->
+                                            if (flavor.toString().isNotEmpty() && flavor.toString() != "None") {
+                                                Text(
+                                                    text = "• Flavor: $flavor",
+                                                    fontSize = 12.sp,
+                                                    color = TextSecondary,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+                                        }
+                                        
+                                        // Dipping Sauce
+                                        customization["dippingSauce"]?.let { sauce ->
+                                            if (sauce.toString().isNotEmpty() && sauce.toString() != "None") {
+                                                Text(
+                                                    text = "• Dipping Sauce: $sauce",
+                                                    fontSize = 12.sp,
+                                                    color = WingZoneOrange,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+                                        }
+                                        
+                                        // Fries Exchange
+                                        (customization["friesExchange"] as? Map<*, *>)?.let { fries ->
+                                            val friesName = fries["name"]?.toString() ?: ""
+                                            val size = fries["selectedSize"]?.toString() ?: ""
+                                            val friesFlavor = fries["selectedFlavor"]?.toString() ?: ""
+                                            
+                                            if (friesName.isNotEmpty()) {
+                                                val sizeText = if (size == "jumbo") " (Jumbo)" else ""
+                                                val flavorText = if (friesFlavor.isNotEmpty()) " - $friesFlavor" else ""
+                                                Text(
+                                                    text = "• Side: $friesName$sizeText$flavorText",
+                                                    fontSize = 12.sp,
+                                                    color = TextSecondary
+                                                )
+                                            }
+                                        }
+                                        
+                                        // Salad Type
+                                        customization["saladType"]?.let { salad ->
+                                            if (salad.toString().isNotEmpty()) {
+                                                Text(
+                                                    text = "• Salad: $salad",
+                                                    fontSize = 12.sp,
+                                                    color = TextSecondary
+                                                )
+                                            }
+                                        }
+                                        
+                                        // Drink
+                                        customization["drink"]?.let { drink ->
+                                            if (drink.toString().isNotEmpty() && drink.toString() != "None") {
+                                                Text(
+                                                    text = "• Drink: $drink",
+                                                    fontSize = 12.sp,
+                                                    color = Color(0xFF1976D2),
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+                                        }
+                                        
+                                        // Special Instructions
+                                        itemMap["specialInstructions"]?.let { instructions ->
+                                            if (instructions.toString().isNotEmpty()) {
+                                                Text(
+                                                    text = "• Note: $instructions",
+                                                    fontSize = 12.sp,
+                                                    color = TextSecondary,
+                                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                            
-                            // Total
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .background(
-                                        Color(0xFFF5F5F5),
-                                        RoundedCornerShape(12.dp)
-                                    )
-                                    .padding(16.dp)
-                            ) {
-                                Column {
-                                    Text(
-                                        text = "TOTAL",
-                                        fontSize = 11.sp,
-                                        color = TextSecondary,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Text(
-                                        text = "RM ${String.format("%.2f", order.total)}",
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = WingZoneRed
-                                    )
-                                }
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(20.dp))
+                    
+                    // Dashed Divider
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                    ) {
+                        drawLine(
+                            color = Color(0xFFBDBDBD),
+                            start = Offset(0f, 0f),
+                            end = Offset(size.width, 0f),
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 5f), 0f),
+                            strokeWidth = 2f
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(20.dp))
+                    
+                    // Footer with Compact Barcode
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Smaller Barcode
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            repeat(16) { index ->
+                                Box(
+                                    modifier = Modifier
+                                        .width(if (index % 3 == 0) 3.dp else 2.dp)
+                                        .height(if (index % 2 == 0) 28.dp else 20.dp)
+                                        .background(
+                                            if (index % 4 == 0) WingZoneOrange else Color(0xFF424242),
+                                            RoundedCornerShape(1.dp)
+                                        )
+                                )
                             }
                         }
                         
                         Spacer(modifier = Modifier.height(16.dp))
                         
-                        // Location
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    Color(0xFFFFF8E1),
-                                    RoundedCornerShape(12.dp)
-                                )
-                                .padding(16.dp)
+                        // Payment Info Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.LocationOn,
-                                    contentDescription = null,
-                                    tint = Color(0xFFFF6F00),
-                                    modifier = Modifier.size(28.dp)
+                            Column {
+                                Text(
+                                    text = "Payment",
+                                    fontSize = 12.sp,
+                                    color = TextSecondary
                                 )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = "BRANCH",
-                                        fontSize = 10.sp,
-                                        color = TextSecondary,
-                                        fontWeight = FontWeight.Medium
+                                Text(
+                                    text = when (paymentType.lowercase()) {
+                                        "cash" -> "Cash"
+                                        "online" -> "Online Banking (FPX)"
+                                        else -> paymentType.replaceFirstChar { it.uppercase() }
+                                    },
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextPrimary
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = "Total",
+                                    fontSize = 12.sp,
+                                    color = TextSecondary
+                                )
+                                Text(
+                                    text = "RM ${String.format("%.2f", order.total)}",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = WingZoneRed
+                                )
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        // Location & Type
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "$orderType @ $location",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                            Text(
+                                text = paymentStatus.uppercase(),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (paymentStatus.equals("paid", ignoreCase = true)) 
+                                    Color(0xFF4CAF50) else Color(0xFFFF9800)
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    // Action Buttons
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Mark as Delivered Button - Only show if order is ready
+                        if (order.status == "ready") {
+                            Button(
+                                onClick = {
+                                    isDelivering = true
+                                    firestore.collection("orders")
+                                        .document(order.id)
+                                        .update(
+                                            mapOf(
+                                                "status" to "delivered",
+                                                "deliveredAt" to com.google.firebase.Timestamp.now()
+                                            )
+                                        )
+                                        .addOnSuccessListener {
+                                            isDelivering = false
+                                            onDismiss()
+                                        }
+                                        .addOnFailureListener {
+                                            isDelivering = false
+                                        }
+                                },
+                                enabled = !isDelivering,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(50.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = WingZoneRed),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                if (isDelivering) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        color = Color.White,
+                                        strokeWidth = 2.dp
                                     )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = location,
-                                        fontSize = 17.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextPrimary
+                                        text = "Mark as Delivered",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.SemiBold
                                     )
                                 }
                             }
                         }
                         
-                        Spacer(modifier = Modifier.height(20.dp))
-                        
-                        // Timestamp
-                        val dateFormat = SimpleDateFormat("MMM dd, yyyy • hh:mm a", Locale.getDefault())
-                        Text(
-                            text = "Order placed: ${dateFormat.format(order.createdAt)}",
-                            fontSize = 12.sp,
-                            color = TextSecondary,
-                            modifier = Modifier.align(Alignment.CenterHorizontally)
-                        )
-                    }
-                    
-                    // Close Button - Visible on all screens
-                    Button(
-                        onClick = onDismiss,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp)
-                            .padding(bottom = 24.dp, top = 16.dp)
-                            .height(54.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF263238)),
-                        shape = RoundedCornerShape(12.dp),
-                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Close",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        // Close Button
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE0E0E0))
+                        ) {
+                            Text(
+                                text = "Close",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextSecondary
+                            )
+                        }
                     }
                 }
             }

@@ -120,6 +120,7 @@ class LobbyViewModel(
         orderType: String,
         location: Location,
         paymentMethod: String,
+        paymentType: String,
         onResult: (Result<String>) -> Unit
     ) {
         viewModelScope.launch {
@@ -145,6 +146,7 @@ class LobbyViewModel(
                         "city" to location.city
                     ),
                     "paymentMethod" to paymentMethod,
+                    "paymentType" to paymentType,
                     "members" to arrayListOf(
                         hashMapOf(
                             "userId" to currentUser.id,
@@ -237,7 +239,17 @@ class LobbyViewModel(
                             "category" to cartItem.menuItem.category,
                             "imageUrl" to (cartItem.menuItem.imageUrl ?: ""),
                             "isAvailable" to cartItem.menuItem.isAvailable,
-                            "requiresCustomization" to cartItem.menuItem.requiresCustomization
+                            "requiresCustomization" to cartItem.menuItem.requiresCustomization,
+                            "customizationOptions" to cartItem.menuItem.customizationOptions?.let { options ->
+                                hashMapOf<String, Any?>(
+                                    "requiresFlavor" to (options.requiresFlavor ?: false),
+                                    "requiresBeverage" to (options.requiresBeverage ?: false),
+                                    "requiresDippingSauce" to (options.requiresDippingSauce ?: false),
+                                    "allowFriesExchange" to (options.allowFriesExchange ?: false),
+                                    "requiresSaladChoice" to (options.requiresSaladChoice ?: false),
+                                    "requiresBoneType" to (options.requiresBoneType ?: false)
+                                )
+                            }
                         ),
                         "quantity" to cartItem.quantity,
                         "customization" to if (cartItem.customization != null) {
@@ -388,7 +400,17 @@ class LobbyViewModel(
                         "category" to cartItem.menuItem.category,
                         "imageUrl" to (cartItem.menuItem.imageUrl ?: ""),
                         "isAvailable" to cartItem.menuItem.isAvailable,
-                        "requiresCustomization" to cartItem.menuItem.requiresCustomization
+                        "requiresCustomization" to cartItem.menuItem.requiresCustomization,
+                        "customizationOptions" to cartItem.menuItem.customizationOptions?.let { options ->
+                            hashMapOf<String, Any?>(
+                                "requiresFlavor" to (options.requiresFlavor ?: false),
+                                "requiresBeverage" to (options.requiresBeverage ?: false),
+                                "requiresDippingSauce" to (options.requiresDippingSauce ?: false),
+                                "allowFriesExchange" to (options.allowFriesExchange ?: false),
+                                "requiresSaladChoice" to (options.requiresSaladChoice ?: false),
+                                "requiresBoneType" to (options.requiresBoneType ?: false)
+                            )
+                        }
                     ),
                     "quantity" to cartItem.quantity,
                     "customization" to if (cartItem.customization != null) {
@@ -476,6 +498,7 @@ class LobbyViewModel(
                 }
                 
                 val paymentMethod = lobbyData["paymentMethod"] as? String ?: "individual"
+                val paymentType = lobbyData["paymentType"] as? String ?: "cash"
                 @Suppress("UNCHECKED_CAST")
                 val members = lobbyData["members"] as? List<Map<String, Any>> ?: emptyList()
                 
@@ -504,6 +527,7 @@ class LobbyViewModel(
                     "orderType" to (lobbyData["orderType"] ?: "pickup"),
                     "location" to lobbyData["location"],
                     "paymentMethod" to paymentMethod,
+                    "paymentType" to paymentType,
                     "hostUserId" to lobbyData["hostUserId"],
                     "hostUserName" to lobbyData["hostUserName"],
                     "members" to members,
@@ -523,16 +547,7 @@ class LobbyViewModel(
                 
                 val groupOrderRef = firestore.collection("orders").add(groupOrderData).await()
                 
-                // Update lobby status
-                firestore.collection("lobbies").document(lobbyId)
-                    .update(mapOf(
-                        "status" to "submitted",
-                        "orderId" to groupOrderRef.id,
-                        "submittedAt" to Date()
-                    ))
-                    .await()
-                
-                // Clear carts for all members
+                // Clear carts for all members BEFORE deleting lobby
                 members.forEach { member ->
                     val userId = member["userId"] as? String
                     if (userId != null) {
@@ -548,6 +563,12 @@ class LobbyViewModel(
                         }
                     }
                 }
+                
+                // Delete the lobby after successful order submission
+                // This removes it for all members (host and non-host)
+                firestore.collection("lobbies").document(lobbyId)
+                    .delete()
+                    .await()
                 
                 // Clear local state
                 _currentLobbyId.value = null
@@ -570,5 +591,12 @@ class LobbyViewModel(
                 onResult(Result.failure(e))
             }
         }
+    }
+    
+    // Clear current lobby (when lobby doesn't exist or user leaves)
+    fun clearCurrentLobby() {
+        android.util.Log.d("LobbyViewModel", "Clearing current lobby state")
+        _currentLobbyId.value = null
+        groupOrderViewModel?.clearCurrentGroupOrder()
     }
 }

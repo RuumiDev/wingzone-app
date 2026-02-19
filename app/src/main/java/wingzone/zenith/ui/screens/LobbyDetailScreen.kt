@@ -1,12 +1,21 @@
 package wingzone.zenith.ui.screens
 
+import android.content.Intent
 import android.graphics.Bitmap
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -15,6 +24,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -29,6 +39,7 @@ import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import wingzone.zenith.ui.theme.*
+import wingzone.zenith.ui.components.SvgIcon
 
 // Helper Composables
 @Composable
@@ -85,14 +96,16 @@ fun MemberCard(
     
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = if (isHost) androidx.compose.foundation.BorderStroke(2.dp, WingZoneRed.copy(alpha = 0.3f)) else null
     ) {
         Column {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(20.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -100,21 +113,33 @@ fun MemberCard(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f)
             ) {
-                Surface(
-                    color = WingZoneOrange.copy(alpha = 0.15f),
-                    shape = RoundedCornerShape(50)
+                // Avatar with initial and gradient background
+                Box(
+                    modifier = Modifier.size(56.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = null,
-                        tint = WingZoneOrange,
-                        modifier = Modifier
-                            .padding(12.dp)
-                            .size(24.dp)
-                    )
+                    Surface(
+                        color = if (isHost) WingZoneRed else WingZoneOrange,
+                        shape = CircleShape,
+                        modifier = Modifier.fillMaxSize(),
+                        shadowElevation = 4.dp
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Text(
+                                text = (member["userName"] as? String)?.firstOrNull()?.uppercase() ?: "?",
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    fontSize = 24.sp
+                                )
+                            )
+                        }
+                    }
                 }
                 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(16.dp))
                 
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -122,7 +147,8 @@ fun MemberCard(
                             text = member["userName"] as? String ?: "Unknown",
                             style = MaterialTheme.typography.bodyLarge.copy(
                                 fontWeight = FontWeight.Bold,
-                                color = DarkGray
+                                color = Color(0xFF2C2C2C),
+                                fontSize = 16.sp
                             )
                         )
                         if (isHost) {
@@ -132,83 +158,312 @@ fun MemberCard(
                                 shape = RoundedCornerShape(4.dp)
                             ) {
                                 Text(
-                                    text = "HOST",
+                                    text = "Host",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontWeight = FontWeight.Bold,
                                         color = WingZoneRed
                                     ),
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                        
+                        // Status pill
+                        Spacer(modifier = Modifier.width(8.dp))
+                        if (hasPaid) {
+                            Surface(
+                                color = Color(0xFF10B981).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = "Ready",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF10B981)
+                                    ),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        } else {
+                            Surface(
+                                color = Color(0xFF9CA3AF).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = "Ordering...",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF6B7280)
+                                    ),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                 )
                             }
                         }
                     }
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
                     
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = if (itemCount > 0) "$itemCount items • RM ${String.format("%.2f", total)}" else "No items yet",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                color = TextSecondary
+                            text = if (itemCount == 0) "No items added yet." else "$itemCount item${if (itemCount == 1) "" else "s"} · RM ${String.format("%.2f", total)}",
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = Color(0xFF999999),
+                                fontSize = 14.sp
                             )
                         )
                         
-                        if (hasPaid) {
-                            Surface(
-                                color = Color(0xFF4CAF50).copy(alpha = 0.15f),
-                                shape = RoundedCornerShape(4.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.CheckCircle,
-                                        contentDescription = null,
-                                        tint = Color(0xFF2E7D32),
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                    Text(
-                                        text = "PAID",
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color(0xFF2E7D32)
-                                        )
-                                    )
-                                }
-                            }
+                        // Show expand/collapse indicator if there are items
+                        if (itemCount > 0) {
+                            Icon(
+                                imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = if (isExpanded) "Collapse" else "Expand",
+                                tint = Color(0xFF999999),
+                                modifier = Modifier.size(16.dp)
+                            )
                         }
                     }
                 }
             }
             
-            Row {
-                if (itemCount > 0) {
-                    IconButton(onClick = { isExpanded = !isExpanded }) {
-                        Icon(
-                            imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                            contentDescription = if (isExpanded) "Collapse" else "Expand",
-                            tint = WingZoneOrange
-                        )
-                    }
-                }
-                
-                if (canKick) {
-                    IconButton(onClick = onKick) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Remove member",
-                            tint = WingZoneRed
-                        )
-                    }
+            // Clickable icon to expand/collapse if there are items
+            if (itemCount > 0) {
+                IconButton(onClick = { isExpanded = !isExpanded }) {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                        tint = Color(0xFF666666)
+                    )
                 }
             }
         }
         
-        // Expandable order details
-        if (isExpanded && itemCount > 0) {
+        // Show items if expanded
+        if (itemCount > 0 && cartItems != null && isExpanded) {
+            Divider(color = Color(0xFFEEEEEE), modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp))
+            
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 20.dp)
+            ) {
+                cartItems.forEach { item ->
+                    val itemMap = item as? Map<String, Any>
+                    if (itemMap != null) {
+                        val menuItem = itemMap["menuItem"] as? Map<String, Any>
+                        val itemName = menuItem?.get("name") as? String ?: itemMap["name"] as? String ?: "Item"
+                        val quantity = (itemMap["quantity"] as? Number)?.toInt() ?: 1
+                        val customization = itemMap["customization"] as? Map<String, Any>
+                        
+                        Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    // Build display name with customization
+                                    val displayName = buildString {
+                                        append(itemName)
+                                        
+                                        // Add salad type for items that require it
+                                        if (customization != null) {
+                                            val customizationOptions = menuItem?.get("customizationOptions") as? Map<String, Any>
+                                            val requiresSaladChoice = customizationOptions?.get("requiresSaladChoice") as? Boolean ?: false
+                                            val saladType = customization["saladType"] as? String
+                                            
+                                            if (requiresSaladChoice && saladType != null) {
+                                                append(" ($saladType)")
+                                            }
+                                            
+                                            // For Ranch or Bleu Cheese items, show selection
+                                            if (itemName.contains("Ranch or Bleu Cheese", ignoreCase = true)) {
+                                                val dippingSauce = customization["dippingSauce"] as? String
+                                                if (dippingSauce != null && dippingSauce != "None") {
+                                                    append(" - $dippingSauce")
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
+                                    Text(
+                                        text = displayName,
+                                        style = MaterialTheme.typography.bodyLarge.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF2C2C2C),
+                                            fontSize = 16.sp
+                                        )
+                                    )
+                                    
+                                    // Show customizations with better formatting
+                                    if (customization != null) {
+                                        // Get customization options from menuItem to determine what to show
+                                        val customizationOptions = menuItem?.get("customizationOptions") as? Map<String, Any>
+                                        
+                                        // If customizationOptions is missing, show all available customization data
+                                        val showAll = customizationOptions == null
+                                        
+                                        val requiresBoneType = showAll || (customizationOptions?.get("requiresBoneType") as? Boolean ?: false)
+                                        val requiresFlavor = showAll || (customizationOptions?.get("requiresFlavor") as? Boolean ?: false)
+                                        val requiresBeverage = showAll || (customizationOptions?.get("requiresBeverage") as? Boolean ?: false)
+                                        val requiresDippingSauce = showAll || (customizationOptions?.get("requiresDippingSauce") as? Boolean ?: false)
+                                        val allowFriesExchange = showAll || (customizationOptions?.get("allowFriesExchange") as? Boolean ?: false)
+                                        val requiresSaladChoice = showAll || (customizationOptions?.get("requiresSaladChoice") as? Boolean ?: false)
+                                        
+                                        Column(
+                                            modifier = Modifier.padding(top = 4.dp),
+                                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            // Bone type
+                                            if (requiresBoneType) {
+                                                val boneType = customization["boneType"] as? String
+                                                if (boneType != null && boneType != "None") {
+                                                    Text(
+                                                        text = boneType,
+                                                        style = MaterialTheme.typography.bodySmall.copy(
+                                                            color = Color(0xFF666666),
+                                                            fontSize = 12.sp
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                            
+                                            // Flavor
+                                            if (requiresFlavor) {
+                                                val flavor = customization["flavor"] as? String
+                                                if (flavor != null && flavor != "None") {
+                                                    Text(
+                                                        text = flavor,
+                                                        style = MaterialTheme.typography.bodySmall.copy(
+                                                            color = Color(0xFF666666),
+                                                            fontSize = 12.sp
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                            
+                                            // Salad
+                                            if (requiresSaladChoice) {
+                                                val saladType = customization["saladType"] as? String
+                                                if (saladType != null && saladType != "None") {
+                                                    Text(
+                                                        text = "Salad: $saladType",
+                                                        style = MaterialTheme.typography.bodySmall.copy(
+                                                            color = Color(0xFF666666),
+                                                            fontSize = 12.sp
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                            
+                                            // Fries exchange (sides)
+                                            if (allowFriesExchange) {
+                                                val friesExchange = customization["friesExchange"] as? Map<String, Any>
+                                                if (friesExchange != null) {
+                                                    val exchangeName = friesExchange["name"] as? String
+                                                    val exchangeSize = friesExchange["selectedSize"] as? String
+                                                    val exchangeFlavor = friesExchange["selectedFlavor"] as? String
+                                                    
+                                                    if (exchangeName != null) {
+                                                        val sizeText = if (exchangeSize == "jumbo") " (Jumbo)" else ""
+                                                        val flavorText = if (!exchangeFlavor.isNullOrEmpty() && exchangeFlavor != "None") " - $exchangeFlavor" else ""
+                                                        Text(
+                                                            text = "Side: $exchangeName$sizeText$flavorText",
+                                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                                color = Color(0xFF666666),
+                                                                fontSize = 12.sp
+                                                            )
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            
+                                            // Drink
+                                            if (requiresBeverage) {
+                                                val drink = customization["drink"] as? String
+                                                if (drink != null && drink != "None") {
+                                                    Text(
+                                                        text = "Drink: $drink",
+                                                        style = MaterialTheme.typography.bodySmall.copy(
+                                                            color = Color(0xFF666666),
+                                                            fontSize = 12.sp
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                            
+                                            // Dipping sauce
+                                            if (requiresDippingSauce) {
+                                                val dippingSauce = customization["dippingSauce"] as? String
+                                                if (dippingSauce != null && dippingSauce != "None") {
+                                                    Text(
+                                                        text = "Dip: $dippingSauce",
+                                                        style = MaterialTheme.typography.bodySmall.copy(
+                                                            color = Color(0xFF666666),
+                                                            fontSize = 12.sp
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                Surface(
+                                    color = Color(0xFFF5F5F5),
+                                    shape = CircleShape,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                        Text(
+                                            text = quantity.toString(),
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF2C2C2C),
+                                                fontSize = 14.sp
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Subtotal for this member
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Subtotal",
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF2C2C2C),
+                            fontSize = 16.sp
+                        )
+                    )
+                    Text(
+                        text = "${String.format("%.2f", total)}",
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF2C2C2C),
+                            fontSize = 16.sp
+                        )
+                    )
+                }
+            }
+        }
+        
+        // Old expandable section - keep for backwards compatibility but hidden
+        if (false && isExpanded && itemCount > 0) {
             Divider(color = Color(0xFFEEEEEE), modifier = Modifier.padding(horizontal = 16.dp))
             
             Column(
@@ -228,6 +483,7 @@ fun MemberCard(
                 cartItems?.forEach { item ->
                     val itemMap = item as? Map<String, Any>
                     if (itemMap != null) {
+                        val menuItem = itemMap["menuItem"] as? Map<String, Any>
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -248,7 +504,6 @@ fun MemberCard(
                                             color = WingZoneOrange
                                         )
                                     )
-                                    val menuItem = itemMap["menuItem"] as? Map<String, Any>
                                     val itemName = menuItem?.get("name") as? String ?: itemMap["name"] as? String ?: "Item"
                                     Text(
                                         text = itemName,
@@ -270,82 +525,115 @@ fun MemberCard(
                             // Customization details
                             val customization = itemMap["customization"] as? Map<String, Any>
                             if (customization != null) {
+                                // Get customization options from menuItem to determine what to show
+                                val customizationOptions = menuItem?.get("customizationOptions") as? Map<String, Any>
+                                
+                                // If customizationOptions is missing, show all available customization data
+                                val showAll = customizationOptions == null
+                                
+                                val requiresBoneType = showAll || (customizationOptions?.get("requiresBoneType") as? Boolean ?: false)
+                                val requiresFlavor = showAll || (customizationOptions?.get("requiresFlavor") as? Boolean ?: false)
+                                val requiresBeverage = showAll || (customizationOptions?.get("requiresBeverage") as? Boolean ?: false)
+                                val requiresDippingSauce = showAll || (customizationOptions?.get("requiresDippingSauce") as? Boolean ?: false)
+                                val allowFriesExchange = showAll || (customizationOptions?.get("allowFriesExchange") as? Boolean ?: false)
+                                val requiresSaladChoice = showAll || (customizationOptions?.get("requiresSaladChoice") as? Boolean ?: false)
+                                
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(start = 32.dp, top = 4.dp),
                                     verticalArrangement = Arrangement.spacedBy(2.dp)
                                 ) {
-                                    val boneType = customization["boneType"] as? String
-                                    if (boneType != null) {
-                                        Text(
-                                            text = "• $boneType",
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                color = TextSecondary,
-                                                fontSize = 13.sp
+                                    // Show bone type
+                                    if (requiresBoneType) {
+                                        val boneType = customization["boneType"] as? String
+                                        if (boneType != null && boneType != "None") {
+                                            Text(
+                                                text = "• $boneType",
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    color = TextSecondary,
+                                                    fontSize = 13.sp
+                                                )
                                             )
-                                        )
+                                        }
                                     }
                                     
-                                    val flavor = customization["flavor"] as? String
-                                    if (flavor != null) {
-                                        Text(
-                                            text = "• Flavor: $flavor",
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                color = TextSecondary,
-                                                fontSize = 13.sp
+                                    // Show flavor
+                                    if (requiresFlavor) {
+                                        val flavor = customization["flavor"] as? String
+                                        if (flavor != null && flavor != "None") {
+                                            Text(
+                                                text = "• Flavor: $flavor",
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    color = TextSecondary,
+                                                    fontSize = 13.sp
+                                                )
                                             )
-                                        )
+                                        }
                                     }
                                     
-                                    val friesExchange = customization["friesExchange"] as? Map<String, Any>
-                                    if (friesExchange != null) {
-                                        val exchangeName = friesExchange["name"] as? String
-                                        val exchangeSize = friesExchange["selectedSize"] as? String
-                                        val exchangeFlavor = friesExchange["selectedFlavor"] as? String
-                                        
-                                        val sizeText = if (exchangeSize == "jumbo") " (Jumbo)" else ""
-                                        val flavorText = if (exchangeFlavor != null) " - $exchangeFlavor" else ""
-                                        Text(
-                                            text = "• Side: $exchangeName$sizeText$flavorText",
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                color = TextSecondary,
-                                                fontSize = 13.sp
+                                    // Show salad choice
+                                    if (requiresSaladChoice) {
+                                        val saladType = customization["saladType"] as? String
+                                        if (saladType != null && saladType != "None") {
+                                            Text(
+                                                text = "• Salad: $saladType",
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    color = TextSecondary,
+                                                    fontSize = 13.sp
+                                                )
                                             )
-                                        )
+                                        }
                                     }
                                     
-                                    val dippingSauce = customization["dippingSauce"] as? String
-                                    if (dippingSauce != null && dippingSauce != "None") {
-                                        Text(
-                                            text = "• Dip: $dippingSauce",
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                color = TextSecondary,
-                                                fontSize = 13.sp
-                                            )
-                                        )
+                                    // Show fries exchange
+                                    if (allowFriesExchange) {
+                                        val friesExchange = customization["friesExchange"] as? Map<String, Any>
+                                        if (friesExchange != null) {
+                                            val exchangeName = friesExchange["name"] as? String
+                                            val exchangeSize = friesExchange["selectedSize"] as? String
+                                            val exchangeFlavor = friesExchange["selectedFlavor"] as? String
+                                            
+                                            if (exchangeName != null) {
+                                                val sizeText = if (exchangeSize == "jumbo") " (Jumbo)" else ""
+                                                val flavorText = if (!exchangeFlavor.isNullOrEmpty() && exchangeFlavor != "None") " - $exchangeFlavor" else ""
+                                                Text(
+                                                    text = "• Side: $exchangeName$sizeText$flavorText",
+                                                    style = MaterialTheme.typography.bodySmall.copy(
+                                                        color = TextSecondary,
+                                                        fontSize = 13.sp
+                                                    )
+                                                )
+                                            }
+                                        }
                                     }
                                     
-                                    val drink = customization["drink"] as? String
-                                    if (drink != null && drink != "None") {
-                                        Text(
-                                            text = "• Drink: $drink",
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                color = TextSecondary,
-                                                fontSize = 13.sp
+                                    // Show dipping sauce
+                                    if (requiresDippingSauce) {
+                                        val dippingSauce = customization["dippingSauce"] as? String
+                                        if (dippingSauce != null && dippingSauce != "None") {
+                                            Text(
+                                                text = "• Dip: $dippingSauce",
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    color = TextSecondary,
+                                                    fontSize = 13.sp
+                                                )
                                             )
-                                        )
+                                        }
                                     }
                                     
-                                    val saladType = customization["saladType"] as? String
-                                    if (saladType != null) {
-                                        Text(
-                                            text = "• Salad: $saladType",
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                color = TextSecondary,
-                                                fontSize = 13.sp
+                                    // Show drink
+                                    if (requiresBeverage) {
+                                        val drink = customization["drink"] as? String
+                                        if (drink != null && drink != "None") {
+                                            Text(
+                                                text = "• Drink: $drink",
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    color = TextSecondary,
+                                                    fontSize = 13.sp
+                                                )
                                             )
-                                        )
+                                        }
                                     }
                                 }
                             }
@@ -400,17 +688,37 @@ fun MemberCard(
                 }
             }
         }
+        
+        // Show "Remove member" button if host can kick (always visible when canKick is true)
+        if (canKick) {
+            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                TextButton(
+                    onClick = onKick,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFEF4444))
+                ) {
+                    Text(
+                        text = "Remove member",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp
+                        )
+                    )
+                }
+            }
+        }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun LobbyDetailScreen(
     lobbyId: String,
     currentUserId: String,
     onNavigateBack: () -> Unit,
     onNavigateToMenu: () -> Unit,
+    onNavigateToCart: () -> Unit,
     onLobbyDeleted: () -> Unit = {},
     lobbyViewModel: wingzone.zenith.viewmodel.LobbyViewModel
 ) {
@@ -427,9 +735,16 @@ fun LobbyDetailScreen(
     var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var showSubmitDialog by remember { mutableStateOf(false) }
     var isSubmitting by remember { mutableStateOf(false) }
+    var isOrderSubmitted by remember { mutableStateOf(false) }
     var previousMemberCount by remember { mutableStateOf(0) }
 
     val isHost = lobby?.get("hostUserId") == currentUserId
+    
+    // Handle back button - prevent accidental exits
+    BackHandler {
+        // Show confirmation dialog before leaving
+        showLeaveDialog = true
+    }
     
     // Generate QR Code
     fun generateQRCode(text: String, size: Int = 512): Bitmap? {
@@ -475,7 +790,25 @@ fun LobbyDetailScreen(
     DisposableEffect(lobbyId) {
         val listener = firestore.collection("lobbies").document(lobbyId)
             .addSnapshotListener { snapshot, error ->
-                if (error != null) return@addSnapshotListener
+                if (error != null) {
+                    android.util.Log.e("LobbyDetail", "Listener error: ${error.message}")
+                    return@addSnapshotListener
+                }
+                
+                // Handle lobby deletion
+                if (snapshot != null && !snapshot.exists()) {
+                    // Lobby was deleted - navigate back for all users
+                    if (isOrderSubmitted) {
+                        Toast.makeText(
+                            context,
+                            "Order submitted! Lobby closed.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    onNavigateBack()
+                    return@addSnapshotListener
+                }
+                
                 if (snapshot != null && snapshot.exists()) {
                     val data = snapshot.data?.toMutableMap() ?: mutableMapOf<String, Any>()
                     data["id"] = snapshot.id
@@ -509,17 +842,60 @@ fun LobbyDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Lobby Details", fontWeight = FontWeight.Bold) },
+                title = { 
+                    Column {
+                        Text(
+                            text = "Review Order",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 22.sp,
+                            color = Color(0xFF2C2C2C)
+                        )
+                        val location = lobby?.get("location") as? Map<String, Any>
+                        Text(
+                            text = location?.get("name") as? String ?: "",
+                            fontSize = 14.sp,
+                            color = Color(0xFF666666),
+                            fontWeight = FontWeight.Normal
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            "Back",
+                            tint = Color(0xFF2C2C2C)
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = {
+                        val code = lobby?.get("code") as? String
+                        if (code != null) {
+                            qrBitmap = generateQRCode(code, 512)
+                            showQRDialog = true
+                        }
+                    }) {
+                        Icon(
+                            Icons.Default.Share,
+                            contentDescription = "Invite",
+                            tint = WingZoneOrange
+                        )
+                    }
+                    IconButton(onClick = { showLeaveDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Leave Lobby",
+                            tint = WingZoneRed
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = WingZoneOrange,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
-                )
+                    containerColor = Color(0xFFFDF4ED),
+                    titleContentColor = Color(0xFF2C2C2C),
+                    navigationIconContentColor = Color(0xFF2C2C2C)
+                ),
+                windowInsets = WindowInsets.statusBars
             )
         }
     ) { padding ->
@@ -546,366 +922,454 @@ fun LobbyDetailScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .background(BackgroundGray),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .background(Color(0xFFFDF4ED)),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 val currentLobby = lobby ?: return@LazyColumn
+                val members = currentLobby["members"] as? List<Map<String, Any>> ?: emptyList()
+                val allPaid = members.all { (it["hasPaid"] as? Boolean) ?: false }
+                val readyCount = members.count { (it["hasPaid"] as? Boolean) ?: false }
                 
-                // Lobby Code Card
+                // Billing Card
                 item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = "Lobby Code",
-                                style = MaterialTheme.typography.titleSmall.copy(
-                                    color = TextSecondary
-                                )
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Surface(
-                                color = WingZoneOrange.copy(alpha = 0.15f),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text(
-                                    text = currentLobby["code"] as? String ?: "",
-                                    style = MaterialTheme.typography.displaySmall.copy(
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = WingZoneOrange,
-                                        letterSpacing = 4.sp
-                                    ),
-                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)
-                                )
-                            }
-                            
-                            Spacer(modifier = Modifier.height(16.dp))
-                            
-                            // Share button with QR code
-                            OutlinedButton(
-                                onClick = {
-                                    val code = currentLobby["code"] as? String
-                                    if (code != null) {
-                                        qrBitmap = generateQRCode(code, 512)
-                                        showQRDialog = true
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(20.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Show QR Code")
-                            }
-                        }
+                    val isHost = (currentLobby["hostUserId"] as? String) == currentUserId
+                    val paymentMethod = currentLobby["paymentMethod"] as? String
+                    
+                    val billingText = when {
+                        isHost && paymentMethod == "host-pays-all" -> "You are paying for everyone"
+                        !isHost && paymentMethod == "host-pays-all" -> "Host is paying for you 🎉"
+                        else -> "Everyone pays their own share"
                     }
-                }
-                
-                // Lobby Info Card
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(20.dp)
-                        ) {
-                            Text(
-                                text = "Lobby Information",
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = DarkGray
-                                )
-                            )
-                            
-                            Spacer(modifier = Modifier.height(16.dp))
-                            
-                            // Host
-                            LobbyInfoRow(
-                                icon = Icons.Default.Person,
-                                label = "Host",
-                                value = currentLobby["hostUserName"] as? String ?: "Unknown"
-                            )
-                            
-                            Spacer(modifier = Modifier.height(12.dp))
-                            
-                            // Location
-                            val location = currentLobby["location"] as? Map<String, Any>
-                            LobbyInfoRow(
-                                icon = Icons.Default.LocationOn,
-                                label = "Location",
-                                value = location?.get("name") as? String ?: "Unknown"
-                            )
-                            
-                            Spacer(modifier = Modifier.height(12.dp))
-                            
-                            // Order Type
-                            LobbyInfoRow(
-                                icon = Icons.Default.ShoppingCart,
-                                label = "Order Type",
-                                value = currentLobby["orderType"] as? String ?: "Pickup"
-                            )
-                            
-                            Spacer(modifier = Modifier.height(12.dp))
-                            
-                            // Payment Method
-                            LobbyInfoRow(
-                                icon = Icons.Default.Star,
-                                label = "Payment",
-                                value = when (currentLobby["paymentMethod"]) {
-                                    "host-pays-all" -> "Host Pays All"
-                                    "split-equally" -> "Split Equally"
-                                    "individual" -> "Individual Payment"
-                                    else -> "Unknown"
-                                }
-                            )
-                        }
+                    
+                    val iconPath = when {
+                        paymentMethod == "host-pays-all" -> "icons/crown.svg"
+                        else -> "icons/groups.svg"
                     }
-                }
-                
-                // Members Section
-                item {
+                    
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White)
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.Transparent
+                        ),
+                        elevation = CardDefaults.cardElevation(
+                            defaultElevation = 8.dp
+                        )
                     ) {
-                        Column(
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(20.dp)
+                                .background(
+                                    brush = Brush.horizontalGradient(
+                                        colors = listOf(
+                                            Color(0xFFFF8C00),
+                                            Color(0xFFFF5500)
+                                        )
+                                    )
+                                )
+                                .padding(20.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Text(
-                                    text = "Members",
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        color = DarkGray
-                                    )
-                                )
-                                
-                                val members = currentLobby["members"] as? List<Map<String, Any>>
-                                val memberCount = members?.size ?: 0
-                                val maxMembers = (currentLobby["maxMembers"] as? Long)?.toInt() ?: 10
-                                
-                                Surface(
-                                    color = Color(0xFF4CAF50).copy(alpha = 0.15f),
-                                    shape = RoundedCornerShape(20.dp)
-                                ) {
-                                    Text(
-                                        text = "$memberCount/$maxMembers",
-                                        style = MaterialTheme.typography.labelLarge.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color(0xFF4CAF50)
+                                Box(
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .background(
+                                            Color.White.copy(alpha = 0.2f),
+                                            CircleShape
                                         ),
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    SvgIcon(
+                                        assetPath = iconPath,
+                                        contentDescription = "Payment Icon",
+                                        modifier = Modifier.size(32.dp),
+                                        tint = Color.White
+                                    )
+                                }
+                                
+                                Spacer(modifier = Modifier.width(16.dp))
+                                
+                                Column {
+                                    Text(
+                                        text = "Payment Method",
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            color = Color.White.copy(alpha = 0.7f),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = billingText,
+                                        style = MaterialTheme.typography.bodyLarge.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            fontSize = 16.sp
+                                        )
                                     )
                                 }
                             }
+                        }
+                    }
+                }
+                
+                // Your basket header with "Add items" link
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Your basket",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF2C2C2C),
+                                fontSize = 22.sp
+                            )
+                        )
+                        TextButton(onClick = onNavigateToMenu) {
+                            Text(
+                                text = "Add items",
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = WingZoneRed,
+                                    fontSize = 16.sp
+                                )
+                            )
                         }
                     }
                 }
                 
                 // Member List
-                val members = currentLobby["members"] as? List<Map<String, Any>> ?: emptyList()
-                items(members) { member ->
-                    MemberCard(
-                        member = member,
-                        isHost = member["userId"] == currentLobby["hostUserId"],
-                        canKick = isHost && member["userId"] != currentUserId,
-                        onKick = {
-                            memberToKick = member["userId"] as? String
-                        },
-                        isCurrentUserHost = isHost,
-                        onPayForMember = {
-                            // Mark this member as paid by host
-                            val memberUserId = member["userId"] as? String ?: ""
-                            lobbyViewModel.markAsPaid(lobbyId, memberUserId) { result ->
-                                result.onSuccess {
-                                    Toast.makeText(context, "Paid for member", Toast.LENGTH_SHORT).show()
-                                }.onFailure { error ->
-                                    Toast.makeText(context, "Failed: ${error.message}", Toast.LENGTH_SHORT).show()
+                items(members, key = { it["userId"] as? String ?: "" }) { member ->
+                    AnimatedVisibility(
+                        visible = true,
+                        enter = slideInVertically(initialOffsetY = { it / 2 }) + fadeIn(),
+                        exit = slideOutVertically(targetOffsetY = { -it / 2 }) + fadeOut(),
+                        modifier = Modifier.animateItem()
+                    ) {
+                        MemberCard(
+                            member = member,
+                            isHost = member["userId"] == currentLobby["hostUserId"],
+                            canKick = isHost && member["userId"] != currentUserId,
+                            onKick = {
+                                memberToKick = member["userId"] as? String
+                            },
+                            isCurrentUserHost = isHost,
+                            onPayForMember = {
+                                val memberUserId = member["userId"] as? String ?: ""
+                                lobbyViewModel.markAsPaid(lobbyId, memberUserId) { result ->
+                                    result.onSuccess {
+                                        Toast.makeText(context, "Paid for member", Toast.LENGTH_SHORT).show()
+                                    }.onFailure { error ->
+                                        Toast.makeText(context, "Failed: ${error.message}", Toast.LENGTH_SHORT).show()
+                                    }
                                 }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
                 
-                // Action Buttons
-                item {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        // Add Items Button
-                        Button(
-                            onClick = onNavigateToMenu,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = WingZoneOrange
-                            ),
-                            shape = RoundedCornerShape(12.dp)
+                // Ready status indicator
+                if (allPaid && members.isNotEmpty()) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFECFDF5))
                         ) {
-                            Icon(Icons.Default.ShoppingCart, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                "Add Items to Cart",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        
-                        // Host: Submit Order Button (only if conditions are met)
-                        if (isHost) {
-                            val paymentMethod = currentLobby["paymentMethod"] as? String ?: "split-equally"
-                            val hostMember = members.find { it["userId"] == currentUserId }
-                            val hostHasPaid = hostMember?.get("hasPaid") as? Boolean ?: false
-                            val otherMembers = members.filter { it["userId"] != currentUserId }
-                            val allOthersPaid = otherMembers.all { (it["hasPaid"] as? Boolean) ?: false }
-                            val allPaid = members.all { (it["hasPaid"] as? Boolean) ?: false }
-                            val canSubmit = when (paymentMethod) {
-                                "host-pays-all" -> true
-                                "individual" -> allPaid
-                                else -> allPaid
-                            }
-                            
-                            // Show host payment button first if host hasn't paid (individual mode)
-                            if (paymentMethod == "individual" && !hostHasPaid) {
-                                Button(
-                                    onClick = { 
-                                        // Mark host as paid
-                                        lobbyViewModel.markAsPaid(lobbyId, currentUserId) { result ->
-                                            result.onSuccess {
-                                                android.widget.Toast.makeText(context, "Payment confirmed!", android.widget.Toast.LENGTH_SHORT).show()
-                                            }.onFailure { error ->
-                                                android.widget.Toast.makeText(context, "Payment failed: ${error.message}", android.widget.Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(56.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = WingZoneRed,
-                                        contentColor = Color.White
-                                    ),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Icon(Icons.Default.CheckCircle, contentDescription = null)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        "Pay My Order (RM ${String.format("%.2f", (hostMember?.get("total") as? Number)?.toDouble() ?: 0.0)})",
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(12.dp))
-                            }
-                            
-                            Button(
-                                onClick = { showSubmitDialog = true },
-                                enabled = canSubmit && !isSubmitting,
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(56.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (canSubmit) WingZoneRed else Color.Gray,
-                                    contentColor = Color.White
-                                ),
-                                shape = RoundedCornerShape(12.dp)
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
                             ) {
-                                if (isSubmitting) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(24.dp),
-                                        color = Color.White
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Color(0xFF10B981),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "Everyone's ready",
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF10B981),
+                                        fontSize = 16.sp
                                     )
-                                } else {
-                                    Icon(
-                                        imageVector = if (canSubmit) Icons.Default.Check else Icons.Default.Lock,
-                                        contentDescription = null
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = if (isSubmitting) "Submitting..." else if (canSubmit) "Submit Group Order" else if (paymentMethod == "host-pays-all") "Submit Order (Host Pays)" else "Waiting for Payments",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            
-                            if (!canSubmit && paymentMethod != "host-pays-all") {
-                                val unpaidCount = members.count { !(it["hasPaid"] as? Boolean ?: false) }
-                                Text(
-                                    text = "💡 $unpaidCount member(s) haven't paid yet",
-                                    fontSize = 12.sp,
-                                    color = TextSecondary,
-                                    modifier = Modifier.padding(horizontal = 4.dp)
-                                )
-                            }
-                        }
-                        
-                        // Host: Delete Lobby / Member: Leave Lobby
-                        if (isHost) {
-                            OutlinedButton(
-                                onClick = { showDeleteDialog = true },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(56.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = WingZoneRed
-                                ),
-                                border = androidx.compose.foundation.BorderStroke(2.dp, WingZoneRed),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Default.Delete, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    "Delete Lobby",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        } else {
-                            OutlinedButton(
-                                onClick = { showLeaveDialog = true },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(56.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = WingZoneRed
-                                ),
-                                border = androidx.compose.foundation.BorderStroke(2.dp, WingZoneRed),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Default.ExitToApp, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    "Leave Lobby",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold
                                 )
                             }
                         }
                     }
+                } else if (members.isNotEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "$readyCount of ${members.size} members are ready",
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF666666),
+                                    fontSize = 16.sp
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LinearProgressIndicator(
+                                progress = if (members.isNotEmpty()) readyCount.toFloat() / members.size.toFloat() else 0f,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp),
+                                color = WingZoneOrange,
+                                trackColor = Color(0xFFE0E0E0)
+                            )
+                        }
+                    }
                 }
                 
-                item { Spacer(modifier = Modifier.height(32.dp)) }
+                // Subtotal
+                item {
+                    val total = members.sumOf { (it["total"] as? Number)?.toDouble() ?: 0.0 }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Subtotal",
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF2C2C2C),
+                                    fontSize = 22.sp
+                                )
+                            )
+                            Text(
+                                text = "(excl. service fees and other charges)",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = Color(0xFF999999),
+                                    fontSize = 12.sp
+                                )
+                            )
+                        }
+                        Text(
+                            text = "RM${String.format("%.2f", total)}",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF2C2C2C),
+                                fontSize = 22.sp
+                            )
+                        )
+                    }
+                }
+                
+                // Bottom spacing for button
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                
+                // Delete Group Order Button (Host only)
+                if (isHost) {
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    item {
+                        OutlinedButton(
+                            onClick = { showDeleteDialog = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = WingZoneRed.copy(alpha = 0.7f)
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(
+                                2.dp,
+                                WingZoneRed.copy(alpha = 0.7f)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Delete Group Order",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                        }
+                    }
+                }
+                
+                // Bottom spacing for button
+                item {
+                    Spacer(modifier = Modifier.height(100.dp))
+                }
+            }
+            
+            // Fixed bottom "Next" button
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.BottomCenter
+            ) {
+                val currentLobby = lobby
+                val members = currentLobby?.get("members") as? List<Map<String, Any>> ?: emptyList()
+                val paymentMethod = currentLobby?.get("paymentMethod") as? String ?: "split-equally"
+                val hostMember = members.find { it["userId"] == currentUserId }
+                val hostHasPaid = hostMember?.get("hasPaid") as? Boolean ?: false
+                val allPaid = members.all { (it["hasPaid"] as? Boolean) ?: false }
+                val canSubmit = when (paymentMethod) {
+                    "host-pays-all" -> true
+                    "individual" -> allPaid
+                    else -> allPaid
+                }
+                
+                val currentUserMember = members.find { it["userId"] == currentUserId }
+                val currentUserHasPaid = currentUserMember?.get("hasPaid") as? Boolean ?: false
+                val currentUserHasItems = (currentUserMember?.get("cartItems") as? List<*>)?.isNotEmpty() ?: false
+                
+                // Button logic:
+                // - Host: Can submit when everyone is ready (based on payment method)
+                // - Member (host-pays-all): Can mark as ready or edit order
+                // - Member (individual/split): Can mark as ready, but CANNOT edit after marking
+                // - If user has no items, enable "Go to Menu" button
+                val buttonEnabled = if (isHost) {
+                    canSubmit && allPaid && members.any { (it["cartItems"] as? List<*>)?.isNotEmpty() == true }
+                } else {
+                    // Always enable for non-host users (for Go to Menu, Mark Ready, or Edit Order in host-pays-all)
+                    true
+                }
+                
+                // For individual payment, users cannot edit after marking as ready
+                val canEditOrder = paymentMethod == "host-pays-all" && currentUserHasPaid
+                
+                val buttonText = when {
+                    isHost && canSubmit -> "Next"
+                    isHost && !canSubmit -> "Waiting for members..."
+                    !isHost && canEditOrder -> "Edit Order"
+                    !isHost && currentUserHasPaid -> "Marked as Ready"
+                    !isHost && currentUserHasItems -> "Next"
+                    else -> "Go to Menu"
+                }
+                
+                Button(
+                    onClick = {
+                        if (isHost && canSubmit) {
+                            if (!allPaid) {
+                                Toast.makeText(
+                                    context,
+                                    "Wait for all members to mark as ready",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                showSubmitDialog = true
+                            }
+                        } else if (!isHost && canEditOrder) {
+                            // User is ready in host-pays-all - unmark as paid and navigate to cart to edit order
+                            scope.launch {
+                                try {
+                                    val lobbyDoc = firestore.collection("lobbies").document(lobbyId).get().await()
+                                    val currentMembers = lobbyDoc.get("members") as? List<Map<String, Any>> ?: emptyList()
+                                    val updatedMembers = currentMembers.map { member ->
+                                        if (member["userId"] == currentUserId) {
+                                            member.toMutableMap().apply {
+                                                put("hasPaid", false)
+                                                put("status", "ordering")
+                                            }
+                                        } else {
+                                            member
+                                        }
+                                    }
+                                    firestore.collection("lobbies").document(lobbyId)
+                                        .update("members", updatedMembers).await()
+                                    onNavigateToCart()
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Failed to update status: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        } else if (!isHost && !currentUserHasItems) {
+                            // Navigate to menu when user has no items
+                            onNavigateToMenu()
+                        } else if (!isHost && currentUserHasItems && !currentUserHasPaid) {
+                            // Mark as ready/paid
+                            lobbyViewModel.markAsPaid(lobbyId, currentUserId) { result ->
+                                result.onSuccess {
+                                    Toast.makeText(context, "You're ready!", Toast.LENGTH_SHORT).show()
+                                }.onFailure { error ->
+                                    Toast.makeText(context, "Failed: ${error.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        } else if (!isHost && currentUserHasPaid && paymentMethod != "host-pays-all") {
+                            // For individual/split payment, show message that they've already marked as ready
+                            Toast.makeText(
+                                context,
+                                "You've already marked as ready. Wait for others to complete.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 16.dp),
+                    enabled = buttonEnabled && !(paymentMethod != "host-pays-all" && currentUserHasPaid && !isHost),
+                    colors = if (!isHost && canEditOrder) {
+                        // Outlined style for "Edit Order" state
+                        ButtonDefaults.buttonColors(
+                            containerColor = Color.White,
+                            contentColor = WingZoneOrange
+                        )
+                    } else {
+                        ButtonDefaults.buttonColors(
+                            containerColor = WingZoneRed,
+                            disabledContainerColor = Color(0xFFE5E5E5),
+                            contentColor = Color.White,
+                            disabledContentColor = Color(0xFF999999)
+                        )
+                    },
+                    border = if (!isHost && canEditOrder) {
+                        androidx.compose.foundation.BorderStroke(2.dp, WingZoneOrange)
+                    } else null,
+                    shape = RoundedCornerShape(16.dp),
+                    elevation = ButtonDefaults.buttonElevation(
+                        defaultElevation = 4.dp,
+                        pressedElevation = 8.dp,
+                        disabledElevation = 0.dp
+                    )
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = buttonText,
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp
+                            )
+                        )
+                        if (buttonEnabled && isHost && canSubmit) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -965,6 +1429,49 @@ fun LobbyDetailScreen(
                     
                     Spacer(modifier = Modifier.height(16.dp))
                     
+                    // Share Invite Link Button
+                    OutlinedButton(
+                        onClick = {
+                            val lobbyCode = lobby?.get("code") as? String ?: ""
+                            val joinLink = "https://us-central1-wingzone-app.cloudfunctions.net/joinLobby?code=$lobbyCode"
+                            val shareText = "🍗 Join my WingZone lobby!\n\n$joinLink"
+                            
+                            try {
+                                val sendIntent = Intent().apply {
+                                    action = Intent.ACTION_SEND
+                                    putExtra(Intent.EXTRA_TEXT, shareText)
+                                    type = "text/plain"
+                                }
+                                val shareIntent = Intent.createChooser(sendIntent, "Share lobby code")
+                                context.startActivity(shareIntent)
+                            } catch (e: Exception) {
+                                Toast.makeText(
+                                    context,
+                                    "Unable to share: ${e.message}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = WingZoneOrange
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, WingZoneOrange)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Share Invite Link",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
                     Button(
                         onClick = { showQRDialog = false },
                         modifier = Modifier.fillMaxWidth(),
@@ -981,35 +1488,68 @@ fun LobbyDetailScreen(
     
     // Delete Dialog
     if (showDeleteDialog) {
+        val deleteScope = rememberCoroutineScope()
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             confirmButton = {
                 Button(
                     onClick = {
-                        scope.launch {
+                        deleteScope.launch {
                             try {
+                                // Set flag to prevent listener from showing message
+                                isOrderSubmitted = false
                                 firestore.collection("lobbies").document(lobbyId).delete().await()
-                                Toast.makeText(context, "Lobby deleted", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "✓ Lobby deleted", Toast.LENGTH_SHORT).show()
                                 showDeleteDialog = false
-                                onLobbyDeleted()
+                                // Small delay to ensure listener is removed
+                                kotlinx.coroutines.delay(100)
                             } catch (e: Exception) {
-                                Toast.makeText(context, "Failed to delete lobby", Toast.LENGTH_SHORT).show()
+                                if (e !is kotlinx.coroutines.CancellationException) {
+                                    Toast.makeText(context, "Failed to delete lobby: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            } finally {
+                                // Always navigate away, even if cancelled
+                                onLobbyDeleted()
                             }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = WingZoneRed)
+                    colors = ButtonDefaults.buttonColors(containerColor = WingZoneRed),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Delete")
+                    Text("Delete", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel")
+                TextButton(
+                    onClick = { showDeleteDialog = false },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Cancel", fontWeight = FontWeight.Medium)
                 }
             },
-            icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = WingZoneRed) },
-            title = { Text("Delete Lobby?") },
-            text = { Text("This will remove the lobby for all members. This action cannot be undone.") }
+            icon = { 
+                Icon(
+                    Icons.Default.Delete, 
+                    contentDescription = null, 
+                    tint = WingZoneRed,
+                    modifier = Modifier.size(32.dp)
+                ) 
+            },
+            title = { 
+                Text(
+                    "Delete Lobby?",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold
+                    )
+                ) 
+            },
+            text = { 
+                Text(
+                    "This will remove the lobby for all members. This action cannot be undone.",
+                    style = MaterialTheme.typography.bodyMedium
+                ) 
+            },
+            shape = RoundedCornerShape(20.dp)
         )
     }
     
@@ -1025,18 +1565,39 @@ fun LobbyDetailScreen(
                                 val members = lobby?.get("members") as? List<Map<String, Any>> ?: emptyList()
                                 val updatedMembers = members.filter { it["userId"] != currentUserId }
                                 
-                                firestore.collection("lobbies").document(lobbyId)
-                                    .update("members", updatedMembers).await()
+                                if (isHost && updatedMembers.isNotEmpty()) {
+                                    // Transfer host to the most recent member (last in list)
+                                    val newHost = updatedMembers.last()
+                                    val newHostId = newHost["userId"] as? String
+                                    
+                                    firestore.collection("lobbies").document(lobbyId)
+                                        .update(
+                                            mapOf(
+                                                "members" to updatedMembers,
+                                                "hostUserId" to newHostId
+                                            )
+                                        ).await()
+                                    
+                                    Toast.makeText(context, "Host transferred to ${newHost["userName"]}", Toast.LENGTH_SHORT).show()
+                                } else if (updatedMembers.isEmpty()) {
+                                    // Last person leaving - delete the lobby
+                                    firestore.collection("lobbies").document(lobbyId).delete().await()
+                                    Toast.makeText(context, "Lobby closed", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    // Regular member leaving
+                                    firestore.collection("lobbies").document(lobbyId)
+                                        .update("members", updatedMembers).await()
+                                    Toast.makeText(context, "Left lobby", Toast.LENGTH_SHORT).show()
+                                }
                                 
-                                Toast.makeText(context, "Left lobby", Toast.LENGTH_SHORT).show()
                                 showLeaveDialog = false
                                 onNavigateBack()
                             } catch (e: Exception) {
-                                Toast.makeText(context, "Failed to leave lobby", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Failed to leave lobby: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = WingZoneOrange)
+                    colors = ButtonDefaults.buttonColors(containerColor = if (isHost) WingZoneRed else WingZoneOrange)
                 ) {
                     Text("Leave")
                 }
@@ -1046,9 +1607,14 @@ fun LobbyDetailScreen(
                     Text("Cancel")
                 }
             },
-            icon = { Icon(Icons.Default.ExitToApp, contentDescription = null, tint = WingZoneOrange) },
-            title = { Text("Leave Lobby?") },
-            text = { Text("Are you sure you want to leave this lobby?") }
+            icon = { Icon(Icons.Default.Close, contentDescription = null, tint = WingZoneRed) },
+            title = { Text(if (isHost) "Leave & Transfer Host?" else "Leave Lobby?") },
+            text = { 
+                Text(
+                    if (isHost) "You are the host. Leaving will transfer host to the most recent member. You will lose your items."
+                    else "Are you sure you want to leave this lobby? You will lose your items."
+                )
+            }
         )
     }
     
@@ -1078,9 +1644,9 @@ fun LobbyDetailScreen(
                                     lobbyViewModel.submitOrder(lobbyId) { result ->
                                         isSubmitting = false
                                         result.onSuccess { orderId ->
-                                            Toast.makeText(context, "Payment confirmed! Order submitted successfully! Order ID: $orderId", Toast.LENGTH_LONG).show()
+                                            isOrderSubmitted = true
                                             showSubmitDialog = false
-                                            onNavigateBack()
+                                            // Don't navigate here - let the listener handle it when lobby is deleted
                                         }.onFailure { error ->
                                             Toast.makeText(context, "Failed: ${error.message}", Toast.LENGTH_LONG).show()
                                             showSubmitDialog = false
@@ -1098,9 +1664,9 @@ fun LobbyDetailScreen(
                             lobbyViewModel.submitOrder(lobbyId) { result ->
                                 isSubmitting = false
                                 result.onSuccess { orderId ->
-                                    Toast.makeText(context, "Order submitted successfully! Order ID: $orderId", Toast.LENGTH_LONG).show()
+                                    isOrderSubmitted = true
                                     showSubmitDialog = false
-                                    onNavigateBack()
+                                    // Don't navigate here - let the listener handle it when lobby is deleted
                                 }.onFailure { error ->
                                     Toast.makeText(context, "Failed: ${error.message}", Toast.LENGTH_LONG).show()
                                     showSubmitDialog = false
@@ -1109,7 +1675,12 @@ fun LobbyDetailScreen(
                         }
                     },
                     enabled = !isSubmitting,
-                    colors = ButtonDefaults.buttonColors(containerColor = WingZoneRed)
+                    colors = ButtonDefaults.buttonColors(containerColor = WingZoneRed),
+                    shape = RoundedCornerShape(12.dp),
+                    elevation = ButtonDefaults.buttonElevation(
+                        defaultElevation = 2.dp,
+                        pressedElevation = 4.dp
+                    )
                 ) {
                     if (isSubmitting) {
                         CircularProgressIndicator(
@@ -1117,36 +1688,111 @@ fun LobbyDetailScreen(
                             color = Color.White
                         )
                     } else {
-                        Text(if (needsHostPayment) "Pay & Submit Order" else "Submit Order")
+                        Text(
+                            if (needsHostPayment) "Pay & Submit Order" else "Submit Order",
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             },
             dismissButton = {
                 TextButton(
                     onClick = { if (!isSubmitting) showSubmitDialog = false },
-                    enabled = !isSubmitting
+                    enabled = !isSubmitting,
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Cancel")
+                    Text("Cancel", fontWeight = FontWeight.Medium)
                 }
             },
             icon = { 
-                Icon(Icons.Default.Check, contentDescription = null, tint = WingZoneRed) 
+                Icon(
+                    Icons.Default.Check, 
+                    contentDescription = null, 
+                    tint = WingZoneOrange,
+                    modifier = Modifier.size(32.dp)
+                ) 
             },
-            title = { Text(if (needsHostPayment) "Confirm Payment & Submit" else "Submit Group Order?") },
+            title = { 
+                Text(
+                    if (needsHostPayment) "Confirm Payment & Submit" else "Submit Group Order?",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold
+                    )
+                ) 
+            },
             text = {
-                Column {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     if (needsHostPayment) {
-                        Text("As host, you're paying for the entire group order.")
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "As host, you're paying for the entire group order.",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
                     } else {
-                        Text("This will submit the group order to the kitchen.")
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Ready to submit this group order to the kitchen?",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
                     }
-                    Text("• ${members.size} member(s)")
-                    Text("• $itemCount item(s)")
-                    Text("• RM ${String.format("%.2f", total)} total", fontWeight = FontWeight.Bold)
+                    
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFFF5F5F5)
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Members:", color = Color(0xFF666666))
+                                Text(
+                                    "${members.size}",
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Items:", color = Color(0xFF666666))
+                                Text(
+                                    "$itemCount",
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            androidx.compose.material3.HorizontalDivider(
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    "Total:",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
+                                Text(
+                                    "RM ${String.format("%.2f", total)}",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    color = WingZoneRed
+                                )
+                            }
+                        }
+                    }
                 }
-            }
+            },
+            shape = RoundedCornerShape(20.dp)
         )
     }
     

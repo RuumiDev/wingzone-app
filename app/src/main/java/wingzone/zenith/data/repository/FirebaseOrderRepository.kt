@@ -2,10 +2,12 @@ package wingzone.zenith.data.repository
 
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import wingzone.zenith.data.models.Cart
 import wingzone.zenith.data.models.CartItem
 import java.util.Date
@@ -25,7 +27,9 @@ data class Order(
     val updatedAt: Date = Date(),
     val deliveryAddress: String? = null,
     val deliveryNotes: String? = null,
-    val phoneNumber: String? = null
+    val phoneNumber: String? = null,
+    val ratedAt: Date? = null, // Track if order has been rated
+    val rating: Int? = null // Store order rating (1-5)
 )
 
 class FirebaseOrderRepository {
@@ -46,7 +50,10 @@ class FirebaseOrderRepository {
         phoneNumber: String? = null,
         orderType: String? = null,
         location: String? = null,
-        lobbyPaymentMethod: String? = null
+        lobbyPaymentMethod: String? = null,
+        paymentType: String? = null,
+        initialStatus: String? = null,
+        initialPaymentStatus: String? = null
     ): Result<String> {
         return createOrderInternal(
             userId = userId,
@@ -60,7 +67,10 @@ class FirebaseOrderRepository {
             groupOrderCode = null,
             orderType = orderType,
             location = location,
-            lobbyPaymentMethod = lobbyPaymentMethod
+            lobbyPaymentMethod = lobbyPaymentMethod,
+            paymentType = paymentType,
+            initialStatus = initialStatus,
+            initialPaymentStatus = initialPaymentStatus
         )
     }
     
@@ -94,10 +104,38 @@ class FirebaseOrderRepository {
                             "name" to item.menuItem.name,
                             "description" to item.menuItem.description,
                             "price" to item.menuItem.price,
-                            "category" to item.menuItem.category
+                            "category" to item.menuItem.category,
+                            "imageUrl" to (item.menuItem.imageUrl ?: ""),
+                            "customizationOptions" to item.menuItem.customizationOptions?.let { opts ->
+                                hashMapOf(
+                                    "requiresFlavor" to opts.requiresFlavor,
+                                    "requiresBeverage" to opts.requiresBeverage,
+                                    "requiresDippingSauce" to opts.requiresDippingSauce,
+                                    "requiresBoneType" to opts.requiresBoneType,
+                                    "allowFriesExchange" to opts.allowFriesExchange,
+                                    "requiresSaladChoice" to opts.requiresSaladChoice
+                                )
+                            }
                         ),
                         "quantity" to item.quantity,
-                        "customization" to item.customization,
+                        "customization" to item.customization?.let { cust ->
+                            hashMapOf(
+                                "flavor" to cust.flavor.name,
+                                "dippingSauce" to cust.dippingSauce.name,
+                                "drink" to cust.drink.name,
+                                "boneType" to cust.boneType?.name,
+                                "friesExchange" to cust.friesExchange?.let { fry ->
+                                    hashMapOf(
+                                        "name" to fry.name,
+                                        "regularPrice" to fry.regularPrice,
+                                        "jumboPrice" to fry.jumboPrice,
+                                        "selectedSize" to fry.selectedSize,
+                                        "selectedFlavor" to fry.selectedFlavor
+                                    )
+                                },
+                                "saladType" to cust.saladType
+                            )
+                        },
                         "specialInstructions" to (item.specialInstructions ?: "")
                     )
                 },
@@ -134,9 +172,22 @@ class FirebaseOrderRepository {
         groupOrderCode: String?,
         orderType: String? = null,
         location: String? = null,
-        lobbyPaymentMethod: String? = null
-    ): Result<String> {
-        return try {
+        lobbyPaymentMethod: String? = null,
+        paymentType: String? = null,
+        initialStatus: String? = null,
+        initialPaymentStatus: String? = null
+    ): Result<String> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            // Determine status and paymentStatus based on payment method
+            val orderStatus = initialStatus ?: when (paymentType ?: paymentMethod) {
+                "cash" -> "Pending Payment"
+                else -> "pending"
+            }
+            val orderPaymentStatus = initialPaymentStatus ?: when (paymentType ?: paymentMethod) {
+                "cash" -> "unpaid"
+                else -> "paid"
+            }
+            
             val orderData = hashMapOf(
                 "userId" to userId,
                 "userName" to userName,
@@ -145,6 +196,7 @@ class FirebaseOrderRepository {
                 "orderType" to (orderType ?: "pickup"),
                 "location" to (location ?: ""),
                 "lobbyPaymentMethod" to (lobbyPaymentMethod ?: ""),
+                "paymentType" to (paymentType ?: paymentMethod),
                 "items" to cart.items.map { item ->
                     hashMapOf(
                         "menuItem" to hashMapOf(
@@ -153,6 +205,17 @@ class FirebaseOrderRepository {
                             "description" to item.menuItem.description,
                             "price" to item.menuItem.price,
                             "category" to item.menuItem.category,
+                            "imageUrl" to (item.menuItem.imageUrl ?: ""),
+                            "customizationOptions" to item.menuItem.customizationOptions?.let { opts ->
+                                hashMapOf(
+                                    "requiresFlavor" to opts.requiresFlavor,
+                                    "requiresBeverage" to opts.requiresBeverage,
+                                    "requiresDippingSauce" to opts.requiresDippingSauce,
+                                    "requiresBoneType" to opts.requiresBoneType,
+                                    "allowFriesExchange" to opts.allowFriesExchange,
+                                    "requiresSaladChoice" to opts.requiresSaladChoice
+                                )
+                            },
                             "kitchenIngredients" to item.menuItem.kitchenIngredients?.let { kitchen ->
                                 hashMapOf(
                                     "ingredients" to kitchen.ingredients.map { ingredient ->
@@ -166,7 +229,24 @@ class FirebaseOrderRepository {
                             }
                         ),
                         "quantity" to item.quantity,
-                        "customization" to item.customization,
+                        "customization" to item.customization?.let { cust ->
+                            hashMapOf(
+                                "flavor" to cust.flavor.name,
+                                "dippingSauce" to cust.dippingSauce.name,
+                                "drink" to cust.drink.name,
+                                "boneType" to cust.boneType?.name,
+                                "friesExchange" to cust.friesExchange?.let { fry ->
+                                    hashMapOf(
+                                        "name" to fry.name,
+                                        "regularPrice" to fry.regularPrice,
+                                        "jumboPrice" to fry.jumboPrice,
+                                        "selectedSize" to fry.selectedSize,
+                                        "selectedFlavor" to fry.selectedFlavor
+                                    )
+                                },
+                                "saladType" to cust.saladType
+                            )
+                        },
                         "specialInstructions" to (item.specialInstructions ?: "")
                     )
                 },
@@ -174,8 +254,8 @@ class FirebaseOrderRepository {
                 "tax" to cart.tax,
                 "total" to cart.total,
                 "totalItems" to cart.totalItems,
-                "status" to "pending",
-                "paymentStatus" to "paid",
+                "status" to orderStatus,
+                "paymentStatus" to orderPaymentStatus,
                 "paymentMethod" to paymentMethod,
                 "createdAt" to Date(),
                 "updatedAt" to Date(),

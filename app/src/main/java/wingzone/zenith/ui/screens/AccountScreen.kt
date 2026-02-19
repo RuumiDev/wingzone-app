@@ -31,7 +31,8 @@ fun AccountScreen(
     authViewModel: AuthViewModel = AuthViewModel(),
     onAuthRequired: () -> Unit = {},
     onNavigateToOrderTracking: () -> Unit = {},
-    onNavigateToOrderHistory: () -> Unit = {}
+    onNavigateToOrderHistory: () -> Unit = {},
+    onNavigateToMyReviews: () -> Unit = {}
 ) {
     val currentUser by authViewModel.currentUser.collectAsState()
     val isAuthenticated = currentUser != null
@@ -158,9 +159,9 @@ fun AccountScreen(
                 SectionHeader("Feedback")
                 MenuItemCard(
                     icon = Icons.Default.Star,
-                    title = "Ratings & Reviews",
+                    title = "My Reviews",
                     subtitle = "Share your experience",
-                    onClick = { /* Navigate to ratings */ }
+                    onClick = onNavigateToMyReviews
                 )
                 
                 Spacer(modifier = Modifier.height(24.dp))
