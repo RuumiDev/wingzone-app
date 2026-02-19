@@ -36,32 +36,13 @@ fun AccountScreen(
 ) {
     val currentUser by authViewModel.currentUser.collectAsState()
     val isAuthenticated = currentUser != null
-    var showSettingsDialog by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showVerificationDialog by remember { mutableStateOf(false) }
     
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
-                    Text(
-                        "Account",
-                        fontWeight = FontWeight.Bold,
-                        color = WingZoneRed,
-                        fontSize = 24.sp
-                    )
-                },
-                actions = {
-                    if (isAuthenticated) {
-                        IconButton(onClick = { showSettingsDialog = true }) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "Settings",
-                                tint = WingZoneRed
-                            )
-                        }
-                    }
-                },
+                title = { Text("Account", style = MaterialTheme.typography.titleLarge.copy(color = WingZoneRed)) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.White
                 ),
@@ -165,38 +146,48 @@ fun AccountScreen(
                 )
                 
                 Spacer(modifier = Modifier.height(24.dp))
+
+                // Info Links
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = Color(0xFFEEEEEE)
+                )
+                InfoLinkRow(text = "Privacy Policy", onClick = { /* TODO */ })
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = Color(0xFFEEEEEE)
+                )
+                InfoLinkRow(text = "Terms of Service", onClick = { /* TODO */ })
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = Color(0xFFEEEEEE)
+                )
+                InfoLinkRow(text = "App Version 1.0.0", clickable = false)
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = Color(0xFFEEEEEE)
+                )
+                Spacer(modifier = Modifier.weight(1f))
                 
-                // Sign Out Button
-                Button(
+                TextButton(
                     onClick = { showLogoutDialog = true },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
-                        .height(56.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
-                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Sign Out",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
+                        fontSize = 14.sp,
+                        color = Color(0xFFAAAAAA)
                     )
                 }
-                
-                Spacer(modifier = Modifier.height(24.dp))
                 
                 // Extra space to prevent bottom nav from covering content
                 Spacer(modifier = Modifier.height(80.dp))
             }
         }
     }
-    
+
     // Logout Confirmation Dialog
     if (showLogoutDialog) {
         AlertDialog(
@@ -239,13 +230,6 @@ fun AccountScreen(
                     Text("Cancel", color = TextSecondary)
                 }
             }
-        )
-    }
-    
-    // Settings Dialog
-    if (showSettingsDialog) {
-        SettingsDialog(
-            onDismiss = { showSettingsDialog = false }
         )
     }
     
@@ -636,115 +620,32 @@ fun MenuItemCard(
 }
 
 @Composable
-fun SettingsDialog(onDismiss: () -> Unit) {
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Settings",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
-                    IconButton(onClick = onDismiss) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close",
-                            tint = Color.Gray
-                        )
-                    }
-                }
-                
-                HorizontalDivider(color = LightGray)
-                
-                SettingsItem(
-                    icon = Icons.Default.Notifications,
-                    title = "Notifications",
-                    subtitle = "Manage push notifications",
-                    onClick = { /* TODO */ }
-                )
-                
-                SettingsItem(
-                    icon = Icons.Default.LocationOn,
-                    title = "Delivery Addresses",
-                    subtitle = "Manage saved addresses",
-                    onClick = { /* TODO */ }
-                )
-                
-                SettingsItem(
-                    icon = Icons.Default.Star,
-                    title = "Privacy Policy",
-                    subtitle = "View privacy policy",
-                    onClick = { /* TODO */ }
-                )
-                
-                SettingsItem(
-                    icon = Icons.Default.Info,
-                    title = "About",
-                    subtitle = "Version 1.0.0",
-                    onClick = { /* TODO */ }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun SettingsItem(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit
+fun InfoLinkRow(
+    text: String,
+    clickable: Boolean = true,
+    onClick: () -> Unit = {}
 ) {
-    Surface(
-        onClick = onClick,
-        color = Color.Transparent
+    val modifier = if (clickable)
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 14.dp)
+    else
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp)
+
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = WingZoneRed,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = TextPrimary
-                )
-                Text(
-                    text = subtitle,
-                    fontSize = 12.sp,
-                    color = TextSecondary
-                )
-            }
+        Text(
+            text = text,
+            fontSize = 13.sp,
+            color = Color(0xFF888888)
+        )
+        if (clickable) {
             Icon(
                 imageVector = Icons.Default.KeyboardArrowRight,
                 contentDescription = null,
-                tint = Color.Gray,
-                modifier = Modifier.size(20.dp)
+                tint = Color(0xFFCCCCCC),
+                modifier = Modifier.size(16.dp)
             )
         }
     }

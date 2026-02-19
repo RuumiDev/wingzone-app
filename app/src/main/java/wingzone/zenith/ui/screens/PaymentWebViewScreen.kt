@@ -29,7 +29,7 @@ fun PaymentWebViewScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Complete Payment") },
+                title = { Text("Complete Payment", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(

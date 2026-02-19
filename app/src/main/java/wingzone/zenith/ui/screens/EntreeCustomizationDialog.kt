@@ -16,7 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,8 +32,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import wingzone.zenith.data.models.*
 import wingzone.zenith.data.repository.AvailabilityRepository
 import wingzone.zenith.ui.theme.*
@@ -93,7 +96,7 @@ fun EntreeCustomizationDialog(
                     navigationIcon = {
                         IconButton(onClick = onDismiss) {
                             Icon(
-                                imageVector = Icons.Default.ArrowBack,
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Back",
                                 tint = Color.White
                             )
@@ -135,7 +138,14 @@ fun EntreeCustomizationDialog(
                                 contentAlignment = Alignment.Center
                             ) {
                                 AsyncImage(
-                                    model = menuItem.imageUrl,
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data(menuItem.imageUrl)
+                                        .crossfade(300)
+                                        .placeholder(android.graphics.drawable.ColorDrawable(android.graphics.Color.parseColor("#F5F5F5")))
+                                        .memoryCacheKey(menuItem.id)
+                                        .memoryCachePolicy(CachePolicy.ENABLED)
+                                        .diskCachePolicy(CachePolicy.ENABLED)
+                                        .build(),
                                     contentDescription = menuItem.name,
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop,

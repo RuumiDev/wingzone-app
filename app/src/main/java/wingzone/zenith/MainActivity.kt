@@ -58,6 +58,7 @@ import wingzone.zenith.utils.rememberNetworkState
 import wingzone.zenith.viewmodel.AuthViewModel
 import wingzone.zenith.viewmodel.CartViewModel
 import wingzone.zenith.viewmodel.GroupOrderViewModel
+import wingzone.zenith.viewmodel.MenuViewModel
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.Button
 
@@ -307,6 +308,7 @@ fun AppNavigation() {
     val authViewModel = remember { AuthViewModel() }
     val cartViewModel = remember { CartViewModel() }
     val groupOrderViewModel = remember { GroupOrderViewModel() }
+    val menuViewModel = remember { MenuViewModel(context.applicationContext as android.app.Application) }
     val lobbyViewModel = remember { 
         wingzone.zenith.viewmodel.LobbyViewModel(
             context.applicationContext as android.app.Application,
@@ -322,6 +324,7 @@ fun AppNavigation() {
     var selectedTab by remember { mutableStateOf(0) }
     var currentLobbyId by remember { mutableStateOf<String?>(null) }
     var pendingOrderIdForProcessing by remember { mutableStateOf<String?>(null) }
+    var qrScannerReturnToHome by remember { mutableStateOf(false) }
     
     // Active order tracking
     var activeOrder by remember { mutableStateOf<Order?>(null) }
@@ -613,6 +616,7 @@ fun AppNavigation() {
                     authViewModel = authViewModel,
                     cartViewModel = cartViewModel,
                     groupOrderViewModel = groupOrderViewModel,
+                    menuViewModel = menuViewModel,
                     lobbyViewModel = lobbyViewModel,
                     onAuthRequired = {
                         requiresAuth = true
@@ -641,13 +645,16 @@ fun AppNavigation() {
                     onNavigateToJoinLobby = {
                         currentScreen = Screen.JoinLobby
                     },
-                    onNavigateToGroupOrder = {},
                     onNavigateToLobbyDetail = { lobbyId ->
                         currentLobbyId = lobbyId
                         currentScreen = Screen.LobbyDetail(lobbyId)
                     },
                     onNavigateToPayment = { pendingOrderId ->
                         currentScreen = Screen.PaymentWebView(pendingOrderId)
+                    },
+                    onNavigateToQRScanner = {
+                        qrScannerReturnToHome = true
+                        currentScreen = Screen.QRScanner
                     },
                     initialTab = selectedTab
                 )
@@ -713,7 +720,13 @@ fun AppNavigation() {
         Screen.QRScanner -> {
             wingzone.zenith.ui.screens.QRScannerScreen(
                 onBack = {
-                    currentScreen = Screen.JoinLobby
+                    if (qrScannerReturnToHome) {
+                        qrScannerReturnToHome = false
+                        currentScreen = Screen.Home
+                        selectedTab = 3
+                    } else {
+                        currentScreen = Screen.JoinLobby
+                    }
                 },
                 onCodeScanned = { code ->
                     // Auto-fill code and attempt to join
@@ -722,12 +735,19 @@ fun AppNavigation() {
                         if (result.isSuccess) {
                             val lobbyId = result.getOrNull()
                             if (lobbyId != null) {
+                                qrScannerReturnToHome = false
                                 currentLobbyId = lobbyId
                                 currentScreen = Screen.LobbyDetail(lobbyId)
                             }
                         } else {
                             // Show error and go back to manual entry
-                            currentScreen = Screen.JoinLobby
+                            if (qrScannerReturnToHome) {
+                                qrScannerReturnToHome = false
+                                currentScreen = Screen.Home
+                                selectedTab = 3
+                            } else {
+                                currentScreen = Screen.JoinLobby
+                            }
                         }
                     }
                 }

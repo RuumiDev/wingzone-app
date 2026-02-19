@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,11 +20,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import wingzone.zenith.R
 import wingzone.zenith.data.models.CartItem
 import wingzone.zenith.data.repository.FirebaseOrderRepository
@@ -49,7 +54,8 @@ fun CartScreen(
     onOrderPlaced: (String) -> Unit = {},
     onPaymentComplete: () -> Unit = {},
     onNavigateToPayment: (String) -> Unit = {}, // Navigate to payment webview with pendingOrderId
-    onNavigateToOrderDetails: (String) -> Unit = {} // Navigate to order tracking with orderId
+    onNavigateToOrderDetails: (String) -> Unit = {}, // Navigate to order tracking with orderId
+    onBrowseMenu: () -> Unit = {} // Navigate back to the menu tab
 ) {
     val cart by cartViewModel.cart.collectAsState()
     val currentUser by authViewModel.currentUser.collectAsState()
@@ -186,6 +192,26 @@ fun CartScreen(
                         color = Color.Gray,
                         textAlign = TextAlign.Center
                     )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = onBrowseMenu,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = WingZoneOrange
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ShoppingCart,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Browse Menu",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
         } else {
@@ -691,6 +717,8 @@ fun CartScreen(
                                     showVerificationDialog = true
                                 } else if (isInLobby) {
                                     // In lobby - mark as paid
+                                    orderError = null
+                                    orderSuccess = false
                                     showCheckoutDialog = true
                                 } else {
                                     // Not in lobby - validate and create order
@@ -699,6 +727,8 @@ fun CartScreen(
                                     } else if (selectedBranch == null) {
                                         orderError = "Please select a branch"
                                     } else {
+                                        orderError = null
+                                        orderSuccess = false
                                         showCheckoutDialog = true
                                     }
                                 }
@@ -1078,7 +1108,7 @@ fun CartScreen(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(50.dp),
+                            .heightIn(min = 48.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = WingZoneRed)
                     ) {
@@ -1092,10 +1122,12 @@ fun CartScreen(
                             text = when {
                                 isInLobby -> "Proceed to Payment"
                                 selectedPaymentMethod == "cash" -> "Place Order"
-                                else -> "Proceed to Payment Gateway"
+                                else -> "Pay via FPX"
                             },
                             fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 } else if (orderSuccess) {
@@ -1251,7 +1283,14 @@ fun CartItemCardRedesigned(
         ) {
             // Item Image (Left)
             AsyncImage(
-                model = cartItem.menuItem.imageUrl ?: "",
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(cartItem.menuItem.imageUrl ?: "")
+                    .crossfade(200)
+                    .placeholder(android.graphics.drawable.ColorDrawable(android.graphics.Color.parseColor("#F5F5F5")))
+                    .memoryCacheKey(cartItem.menuItem.id)
+                    .memoryCachePolicy(CachePolicy.ENABLED)
+                    .diskCachePolicy(CachePolicy.ENABLED)
+                    .build(),
                 contentDescription = cartItem.menuItem.name,
                 modifier = Modifier
                     .size(64.dp)
@@ -1493,7 +1532,10 @@ fun BranchDropdown(
     onBranchSelected: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    
+
+    // Branches that are not yet open
+    val comingSoonBranches = setOf("Wingzone GreenTown")
+
     ExposedDropdownMenuBox(
         expanded = expanded,
         onExpandedChange = { expanded = !expanded }
@@ -1503,6 +1545,14 @@ fun BranchDropdown(
             onValueChange = {},
             readOnly = true,
             placeholder = { Text("Select Branch", fontSize = 14.sp) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Rounded.LocationOn,
+                    contentDescription = null,
+                    tint = WingZoneOrange,
+                    modifier = Modifier.size(20.dp)
+                )
+            },
             trailingIcon = {
                 Icon(
                     imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
@@ -1513,21 +1563,50 @@ fun BranchDropdown(
                 focusedContainerColor = Color(0xFFF5F5F5),
                 unfocusedContainerColor = Color(0xFFF5F5F5),
                 unfocusedBorderColor = Color.Transparent,
-                focusedBorderColor = WingZoneRed
+                focusedBorderColor = WingZoneOrange
             ),
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier
                 .fillMaxWidth()
                 .menuAnchor()
         )
-        
+
         ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
             branches.forEach { branch ->
+                val isComingSoon = branch in comingSoonBranches
                 DropdownMenuItem(
-                    text = { Text(branch) },
+                    enabled = !isComingSoon,
+                    text = {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = branch,
+                                color = if (isComingSoon) Color(0xFFAAAAAA) else Color.Unspecified,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (isComingSoon) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFFFEBEE)
+                                ) {
+                                    Text(
+                                        text = "Coming Soon",
+                                        color = Color(0xFFC62828),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                    },
                     onClick = {
                         onBranchSelected(branch)
                         expanded = false

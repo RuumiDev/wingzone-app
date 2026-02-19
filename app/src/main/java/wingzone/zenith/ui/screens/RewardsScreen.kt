@@ -47,12 +47,10 @@ fun RewardsScreen() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
+                title = {
                     Text(
                         "Missions and Rewards",
-                        fontWeight = FontWeight.Bold,
-                        color = WingZoneRed,
-                        fontSize = 20.sp
+                        style = MaterialTheme.typography.titleLarge.copy(color = WingZoneRed)
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

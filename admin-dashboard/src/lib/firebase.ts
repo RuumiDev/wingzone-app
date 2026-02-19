@@ -7,7 +7,7 @@ import { getAnalytics, isSupported } from 'firebase/analytics';
 
 // Firebase configuration from your Firebase project
 const firebaseConfig = {
-  apiKey: "AIzaSyBhJf12zZDS9_5-arJQzxkCF7Mzg5yj7qs",
+  apiKey: "AIzaSyC1s7ZNcah2_PLsi6o5CyG8DNlYBkAcIrA",
   authDomain: "wingzone-app.firebaseapp.com",
   projectId: "wingzone-app",
   storageBucket: "wingzone-app.firebasestorage.app",

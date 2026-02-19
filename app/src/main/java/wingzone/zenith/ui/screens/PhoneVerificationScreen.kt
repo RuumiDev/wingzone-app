@@ -73,7 +73,7 @@ fun PhoneVerificationScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Verify Your Account", fontWeight = FontWeight.Bold) },
+                title = { Text("Verify Your Account", style = MaterialTheme.typography.titleLarge) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.White
                 )

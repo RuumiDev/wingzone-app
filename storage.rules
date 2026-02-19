@@ -1,40 +1,95 @@
 rules_version = '2';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Wing Zone – Production Firebase Storage Security Rules
+// Last updated: 2026-02-20
+//
+// Admin check uses the custom Auth claim 'admin' (set via Admin SDK).
+// Storage rules cannot read Firestore, so custom claims are the only option.
+// ─────────────────────────────────────────────────────────────────────────────
+
 service firebase.storage {
   match /b/{bucket}/o {
-    // Menu item images - admins can upload, anyone can read
-    match /menu/{imageId} {
-      allow read: if true;
-      allow write: if request.auth != null;
+
+    // ── Helper functions ─────────────────────────────────────────────────────
+
+    function isAuthenticated() {
+      return request.auth != null;
     }
-    
-    // Menu images (new path)
-    match /menu-images/{imageId} {
-      allow read: if true;
-      allow write: if request.auth != null;
+
+    // Admin check via custom claim only (Firestore not accessible in storage rules)
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.admin == true;
     }
-    
-    // Banner images - admins can upload, anyone can read
-    match /banners/{bannerId} {
-      allow read: if true;
-      allow write: if request.auth != null;
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
     }
-    
-    // Notification sounds - admins can upload, anyone can read
-    match /notification-sounds/{soundId} {
-      allow read: if true;
-      allow write: if request.auth != null;
+
+    // Max file size in bytes (5 MB)
+    function isUnder5MB() {
+      return request.resource.size <= 5 * 1024 * 1024;
     }
-    
-    // Receipts - authenticated users only
-    match /receipts/{receiptId} {
-      allow read, write: if request.auth != null;
+
+    // Only allow common image MIME types
+    function isImage() {
+      return request.resource.contentType.matches('image/(jpeg|jpg|png|webp|gif)');
     }
-    
-    // User uploads
+
+    // ── Profile pictures ─────────────────────────────────────────────────────
+    // Users can only upload to their own folder.
+    // Enforces image type and 5 MB size limit.
+    match /profile-images/{userId}/{fileName} {
+      allow read:   if isAuthenticated();
+      allow create, update: if isOwner(userId) && isImage() && isUnder5MB();
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    // ── User general uploads (legacy path) ───────────────────────────────────
     match /user-uploads/{userId}/{allPaths=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow read:   if isAuthenticated();
+      allow create, update: if isOwner(userId) && isImage() && isUnder5MB();
+      allow delete: if isOwner(userId) || isAdmin();
     }
+
+    // ── Menu item images ─────────────────────────────────────────────────────
+    match /menu/{fileName} {
+      allow read:                 if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /menu-images/{fileName} {
+      allow read:                 if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── Banner images ─────────────────────────────────────────────────────────
+    match /banners/{fileName} {
+      allow read:                 if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── Receipts (order PDFs / sticker images) ───────────────────────────────
+    // Only the authenticated user who owns the receipt path may read.
+    // Cloud Functions write receipts with admin SDK (bypasses rules).
+    match /receipts/{userId}/{fileName} {
+      allow read:   if isOwner(userId) || isAdmin();
+      allow write:  if isAdmin();
+    }
+
+    // Legacy flat receipts path (if any)
+    match /receipts/{receiptId} {
+      allow read:   if isAuthenticated();
+      allow write:  if isAdmin();
+    }
+
+    // ── Notification sounds ──────────────────────────────────────────────────
+    match /notification-sounds/{soundId} {
+      allow read:                 if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── Deny everything else ─────────────────────────────────────────────────
+    // Unmatched paths are denied by default.
   }
 }

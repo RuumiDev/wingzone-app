@@ -22,7 +22,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import wingzone.zenith.data.models.MenuItem
 import wingzone.zenith.ui.theme.*
 
@@ -91,7 +94,14 @@ fun SimpleItemBottomSheet(
                             contentAlignment = Alignment.Center
                         ) {
                             AsyncImage(
-                                model = menuItem.imageUrl,
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(menuItem.imageUrl)
+                                    .crossfade(300)
+                                    .placeholder(android.graphics.drawable.ColorDrawable(android.graphics.Color.parseColor("#F5F5F5")))
+                                    .memoryCacheKey(menuItem.id)
+                                    .memoryCachePolicy(CachePolicy.ENABLED)
+                                    .diskCachePolicy(CachePolicy.ENABLED)
+                                    .build(),
                                 contentDescription = menuItem.name,
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop,

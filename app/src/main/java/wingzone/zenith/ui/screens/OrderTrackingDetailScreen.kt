@@ -108,9 +108,7 @@ fun OrderTrackingDetailScreen(
                 title = {
                     Text(
                         "Track Order",
-                        fontWeight = FontWeight.Bold,
-                        color = WingZoneRed,
-                        fontSize = 20.sp
+                        style = MaterialTheme.typography.titleLarge.copy(color = WingZoneRed)
                     )
                 },
                 navigationIcon = {

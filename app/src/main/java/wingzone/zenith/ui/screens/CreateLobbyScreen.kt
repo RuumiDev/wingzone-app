@@ -50,7 +50,7 @@ fun CreateLobbyScreen(
     var orderType by remember { mutableStateOf<String?>(null) }
     var selectedLocation by remember { mutableStateOf<Location?>(null) }
     var paymentMethod by remember { mutableStateOf<String?>(null) }
-    var paymentType by remember { mutableStateOf<String?>(null) }
+    var paymentType by remember { mutableStateOf<String?>("online") }
     var locationExpanded by remember { mutableStateOf(false) }
     var isCreating by remember { mutableStateOf(false) }
     
@@ -85,11 +85,10 @@ fun CreateLobbyScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
+                title = {
                     Text(
                         "Create Group Lobby",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp
+                        style = MaterialTheme.typography.titleLarge
                     )
                 },
                 navigationIcon = {
@@ -372,21 +371,48 @@ fun CreateLobbyScreen(
                             )
                     ) {
                         locations.forEach { location ->
+                            val isComingSoon = location.name == "Wingzone GreenTown"
                             DropdownMenuItem(
+                                enabled = !isComingSoon,
                                 text = {
                                     Column {
-                                        Text(
-                                            text = location.name,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 16.sp
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = location.address,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontSize = 12.sp,
-                                            color = Color.Gray
-                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = location.name,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 16.sp,
+                                                color = if (isComingSoon) Color(0xFFAAAAAA) else Color.Unspecified,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            if (isComingSoon) {
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = Color(0xFFFFEBEE)
+                                                ) {
+                                                    Text(
+                                                        text = "Coming Soon",
+                                                        color = Color(0xFFC62828),
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        if (!isComingSoon) {
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = location.address,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontSize = 12.sp,
+                                                color = Color.Gray
+                                            )
+                                        }
                                     }
                                 },
                                 onClick = {
@@ -552,18 +578,10 @@ fun CreateLobbyScreen(
                         )
                     }
                     
-                    // Payment Type Cards
+                    // Payment Type Cards — FPX only for group orders
                     Column(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        PaymentTypeCard(
-                            iconPath = "icons/payment/cash.svg",
-                            title = "Cash",
-                            subtitle = "Pay at counter",
-                            selected = paymentType == "cash",
-                            onClick = { paymentType = "cash" }
-                        )
-                        
                         PaymentTypeCard(
                             iconPath = "icons/payment/card.svg",
                             title = "Online Banking",
