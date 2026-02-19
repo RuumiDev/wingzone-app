@@ -1,5 +1,6 @@
 package wingzone.zenith.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -46,6 +47,11 @@ fun OrderTrackingScreen(
     orderId: String? = null,
     onBack: () -> Unit = {}
 ) {
+    // Handle back button
+    BackHandler {
+        onBack()
+    }
+    
     val firestore = FirebaseFirestore.getInstance()
     val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
     var order by remember { mutableStateOf<Order?>(null) }

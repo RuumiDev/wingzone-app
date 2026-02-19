@@ -1,6 +1,7 @@
 package wingzone.zenith.ui.screens
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardActions
@@ -41,6 +42,11 @@ fun JoinLobbyScreen(
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    
+    // Handle back button
+    BackHandler {
+        onNavigateBack()
+    }
     
     // State for 6-digit code
     val codeLength = 6
@@ -157,9 +163,14 @@ fun JoinLobbyScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                         CodeInputBox(
                             value = code1,
                             onValueChange = { newValue ->
@@ -281,6 +292,7 @@ fun JoinLobbyScreen(
                                 }
                             }
                         )
+                        }
                     }
                     
                     // Loading or error state

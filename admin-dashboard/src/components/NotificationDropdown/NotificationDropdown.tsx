@@ -13,6 +13,7 @@ interface Notification {
   orderType?: 'individual' | 'group';
   orderTotal?: number;
   customerName?: string;
+  groupOrderCode?: string;
   createdAt: Timestamp;
   read: boolean;
 }
@@ -164,7 +165,11 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onViewOrder
                     <div className={s.message}>{notification.message}</div>
                     {notification.orderId && (
                       <div className={s.orderInfo}>
-                        <span className={s.orderId}>#{notification.orderId.substring(0, 8).toUpperCase()}</span>
+                        <span className={s.orderId}>
+                          #{notification.orderType === 'group' && notification.groupOrderCode 
+                            ? notification.groupOrderCode 
+                            : notification.orderId.substring(0, 8).toUpperCase()}
+                        </span>
                         {notification.orderType && (
                           <Badge 
                             color={notification.orderType === 'group' ? 'primary' : 'secondary'} 

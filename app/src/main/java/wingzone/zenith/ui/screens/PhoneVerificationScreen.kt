@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.platform.LocalContext
-import androidx.activity.ComponentActivity
+import android.app.Activity
 import androidx.activity.compose.LocalActivity
 import com.google.firebase.FirebaseException
 import com.google.firebase.auth.FirebaseAuth
@@ -65,9 +65,9 @@ fun PhoneVerificationScreen(
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
     var verificationId by remember { mutableStateOf<String?>(null) }
+    var resendToken by remember { mutableStateOf<PhoneAuthProvider.ForceResendingToken?>(null) }
 
     val activity = LocalActivity.current
-    val currentUser by authViewModel.currentUser.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
     Scaffold(
@@ -212,6 +212,7 @@ fun PhoneVerificationScreen(
                             ) {
                                 isLoading = false
                                 verificationId = verificationIdReceived
+                                resendToken = token
                                 showOtpDialog = true
                             }
                         }
@@ -284,10 +285,16 @@ fun PhoneVerificationScreen(
         OtpVerificationDialog(
             phoneNumber = phoneNumber,
             verificationId = verificationId!!,
+            resendToken = resendToken,
+            activity = activity,
             onDismiss = { showOtpDialog = false },
             onVerified = {
                 showOtpDialog = false
                 onVerified()
+            },
+            onNewVerificationId = { newId, newToken ->
+                verificationId = newId
+                resendToken = newToken
             }
         )
     }
@@ -297,14 +304,19 @@ fun PhoneVerificationScreen(
 fun OtpVerificationDialog(
     phoneNumber: String,
     verificationId: String,
+    resendToken: PhoneAuthProvider.ForceResendingToken?,
+    activity: Activity?,
     onDismiss: () -> Unit,
-    onVerified: () -> Unit
+    onVerified: () -> Unit,
+    onNewVerificationId: (String, PhoneAuthProvider.ForceResendingToken) -> Unit
 ) {
     var otpCode by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+    var isResending by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
     var successMessage by remember { mutableStateOf("") }
     var timeLeft by remember { mutableStateOf(60) }
+    var currentVerificationId by remember { mutableStateOf(verificationId) }
     
     val coroutineScope = rememberCoroutineScope()
     val auth = FirebaseAuth.getInstance()
@@ -423,18 +435,85 @@ fun OtpVerificationDialog(
                     }
 
                     TextButton(
-                        onClick = { 
-                            timeLeft = 60
-                            errorMessage = ""
-                            successMessage = "Code resent!"
+                        onClick = {
+                            if (activity != null && resendToken != null) {
+                                isResending = true
+                                errorMessage = ""
+                                successMessage = ""
+                                
+                                val callbacks = object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
+                                    override fun onVerificationCompleted(credential: PhoneAuthCredential) {
+                                        isResending = false
+                                        // Auto-verification successful
+                                        coroutineScope.launch {
+                                            try {
+                                                auth.currentUser?.updatePhoneNumber(credential)?.await()
+                                                FirebaseFirestore.getInstance()
+                                                    .collection("users")
+                                                    .document(auth.currentUser?.uid ?: "")
+                                                    .update(mapOf(
+                                                        "phoneNumber" to phoneNumber,
+                                                        "isPhoneVerified" to true
+                                                    ))
+                                                    .await()
+                                                successMessage = "Phone verified successfully!"
+                                                delay(1000)
+                                                onVerified()
+                                            } catch (e: Exception) {
+                                                errorMessage = "Verification failed: ${e.message}"
+                                            }
+                                        }
+                                    }
+
+                                    override fun onVerificationFailed(e: FirebaseException) {
+                                        isResending = false
+                                        errorMessage = "Failed to resend code: ${e.message}"
+                                    }
+
+                                    override fun onCodeSent(
+                                        newVerificationId: String,
+                                        newToken: PhoneAuthProvider.ForceResendingToken
+                                    ) {
+                                        isResending = false
+                                        currentVerificationId = newVerificationId
+                                        onNewVerificationId(newVerificationId, newToken)
+                                        timeLeft = 60
+                                        successMessage = "Code resent successfully!"
+                                        coroutineScope.launch {
+                                            delay(2000)
+                                            successMessage = ""
+                                        }
+                                    }
+                                }
+
+                                val options = PhoneAuthOptions.newBuilder(auth)
+                                    .setPhoneNumber(phoneNumber)
+                                    .setTimeout(60L, TimeUnit.SECONDS)
+                                    .setActivity(activity)
+                                    .setCallbacks(callbacks)
+                                    .setForceResendingToken(resendToken)
+                                    .build()
+                                
+                                PhoneAuthProvider.verifyPhoneNumber(options)
+                            } else {
+                                errorMessage = "Unable to resend code. Please try again."
+                            }
                         },
-                        enabled = timeLeft == 0
+                        enabled = timeLeft == 0 && !isResending
                     ) {
-                        Text(
-                            text = "Resend Code",
-                            fontSize = 12.sp,
-                            color = if (timeLeft == 0) WingZoneRed else Color.Gray
-                        )
+                        if (isResending) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(12.dp),
+                                color = WingZoneRed,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text(
+                                text = "Resend Code",
+                                fontSize = 12.sp,
+                                color = if (timeLeft == 0) WingZoneRed else Color.Gray
+                            )
+                        }
                     }
                 }
 
@@ -454,7 +533,7 @@ fun OtpVerificationDialog(
 
                             try {
                                 // Verify the OTP code with Firebase
-                                val credential = PhoneAuthProvider.getCredential(verificationId, otpCode)
+                                val credential = PhoneAuthProvider.getCredential(currentVerificationId, otpCode)
                                 
                                 // Link the phone credential to the current user
                                 auth.currentUser?.updatePhoneNumber(credential)?.await()

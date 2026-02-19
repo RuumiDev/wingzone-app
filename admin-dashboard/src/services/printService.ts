@@ -28,6 +28,7 @@ export interface GroupOrderForPrint {
   orderType?: string;
   location?: string;
   paymentMethod?: string;
+  paymentType?: string;
 }
 
 class PrintService {
@@ -563,6 +564,9 @@ class PrintService {
 
   // Print individual receipts for all participants in a group order
   async printGroupOrderReceipts(groupOrder: GroupOrderForPrint, menuItems?: any[], printerName?: string, forcePrint: boolean = false) {
+    console.log('[PrintService.printGroupOrderReceipts] ⚠️ CALLED - This should NOT be called for individual orders!');
+    console.log('[PrintService] CODE VERSION: 2025-02-17-OLD-PATH');
+    
     if (!this.autoPrintEnabled && !forcePrint) {
       console.log('Auto-print is disabled and forcePrint is false');
       return;

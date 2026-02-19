@@ -1,8 +1,5 @@
 package wingzone.zenith.viewmodel
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.*
@@ -15,7 +12,7 @@ import wingzone.zenith.data.repository.AvailabilityRepository
 data class MenuCategory(
     val id: String,
     val name: String,
-    val icon: ImageVector,
+    val iconPath: String,  // SVG file path in assets
     val items: List<MenuItem>
 )
 
@@ -100,14 +97,14 @@ class MenuViewModel : ViewModel() {
         )
         
         val categories = listOf(
-            MenuCategory("combos", "Combo Meals", Icons.Default.Star, sortedComboMeals),
-            MenuCategory("wings", "Wings", Icons.Default.ShoppingCart, sortedWings),
-            MenuCategory("tenders", "Tenders", Icons.Default.ShoppingCart, groupedItems["Tenders"] ?: emptyList()),
-            MenuCategory("burgers", "Burgers & Sandwiches", Icons.Default.ShoppingCart, groupedItems["Burgers & Sandwiches"] ?: emptyList()),
-            MenuCategory("local", "Local Favorites", Icons.Default.Home, groupedItems["Local Favorites"] ?: emptyList()),
-            MenuCategory("salads", "Salads", Icons.Default.ShoppingCart, groupedItems["Salads"] ?: emptyList()),
-            MenuCategory("sides", "Sides", Icons.Default.ShoppingCart, groupedItems["Sides"] ?: emptyList()),
-            MenuCategory("beverages", "Beverages", Icons.Default.ShoppingCart, groupedItems["Beverages"] ?: emptyList())
+            MenuCategory("combos", "Combo Meals", "icons/meal.svg", sortedComboMeals),
+            MenuCategory("wings", "Wings", "icons/wings.svg", sortedWings),
+            MenuCategory("tenders", "Tenders", "icons/tenders.svg", groupedItems["Tenders"] ?: emptyList()),
+            MenuCategory("burgers", "Burgers & Sandwiches", "icons/burger.svg", groupedItems["Burgers & Sandwiches"] ?: emptyList()),
+            MenuCategory("local", "Local Favorites", "icons/local-favourite.svg", groupedItems["Local Favorites"] ?: emptyList()),
+            MenuCategory("salads", "Salads", "icons/salad.svg", groupedItems["Salads"] ?: emptyList()),
+            MenuCategory("sides", "Sides", "icons/sides.svg", groupedItems["Sides"] ?: emptyList()),
+            MenuCategory("beverages", "Beverages", "icons/beverage.svg", groupedItems["Beverages"] ?: emptyList())
         ).filter { it.items.isNotEmpty() } // Only show categories with items
         
         _menuState.value = MenuState.Success(categories)

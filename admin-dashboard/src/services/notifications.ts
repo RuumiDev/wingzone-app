@@ -11,6 +11,7 @@ export interface NotificationData {
   orderType?: 'individual' | 'group';
   orderTotal?: number;
   customerName?: string;
+  groupOrderCode?: string;
 }
 
 export interface CustomSound {
@@ -34,6 +35,7 @@ class NotificationService {
   private audioContext: AudioContext | null = null;
   private hasPlayedSound = false;
   private toastCallback: ((title: string, message: string, type: 'order') => void) | null = null;
+  private printedOrderIds: Set<string> = new Set(); // Track printed orders to prevent duplicates
   private soundSettings: NotificationSoundSettings = {
     enabled: true,
     soundType: 'default',
@@ -102,7 +104,12 @@ class NotificationService {
 
   // Play notification sound with selected type
   private playNotificationSound() {
-    if (!this.soundSettings.enabled) return;
+    console.log('[SOUND] playNotificationSound called. Enabled:', this.soundSettings.enabled, 'Type:', this.soundSettings.soundType);
+    
+    if (!this.soundSettings.enabled) {
+      console.log('[SOUND] Sound disabled in settings');
+      return;
+    }
 
     const soundMap: Record<string, string> = {
       'urgent-alert': '/sounds/Urgent Alert.mp3'
@@ -110,19 +117,23 @@ class NotificationService {
 
     // Check if it's a preset sound
     if (soundMap[this.soundSettings.soundType]) {
+      console.log('[SOUND] Playing preset sound:', this.soundSettings.soundType);
       this.playAudioFile(soundMap[this.soundSettings.soundType]);
     }
     // Check if it's a custom sound
     else if (this.soundSettings.soundType !== 'default') {
       const customSound = this.soundSettings.customSounds.find(s => s.id === this.soundSettings.soundType);
       if (customSound) {
+        console.log('[SOUND] Playing custom sound:', customSound.name);
         this.playAudioFile(customSound.url);
       } else {
+        console.log('[SOUND] Custom sound not found, playing default beep');
         this.playDefaultBeep();
       }
     } 
     // Fallback to default beep
     else {
+      console.log('[SOUND] Playing default beep');
       this.playDefaultBeep();
     }
   }
@@ -148,9 +159,15 @@ class NotificationService {
 
   // Play default beep sound (original implementation)
   private playDefaultBeep() {
-    if (!this.audioContext) return;
+    console.log('[SOUND] playDefaultBeep called. AudioContext:', !!this.audioContext);
+    
+    if (!this.audioContext) {
+      console.error('[SOUND] AudioContext is not initialized!');
+      return;
+    }
 
     try {
+      console.log('[SOUND] Creating oscillators for beep...');
       const volume = this.soundSettings.volume / 100;
       
       // Create a simple beep sound
@@ -251,21 +268,32 @@ class NotificationService {
       return;
     }
 
-    // Set initial timestamp to avoid notifying for old orders
-    this.lastOrderTimestamp = new Date();
+    // Set initial timestamp to 10 seconds ago to catch very recent orders
+    this.lastOrderTimestamp = new Date(Date.now() - 10000);
     this.hasPlayedSound = false;
+    
+    console.log('[ORDER MONITORING] Starting... Will process orders after:', this.lastOrderTimestamp.toISOString());
 
     const ordersRef = collection(db, 'orders');
     const q = query(ordersRef, orderBy('createdAt', 'desc'), limit(20));
 
     this.orderListener = onSnapshot(q, (snapshot) => {
+      console.log('[ORDER LISTENER] Snapshot received. Changes:', snapshot.docChanges().length);
+      
       snapshot.docChanges().forEach(async (change) => {
         if (change.type === 'added') {
           const orderData = change.doc.data();
           const orderCreatedAt = orderData.createdAt?.toDate();
+          const fullOrderId = change.doc.id;
+
+          console.log('[ORDER LISTENER] New order detected:', fullOrderId.substring(0, 8), 'Type:', change.type, 'Created at:', orderCreatedAt?.toISOString());
+          console.log('[ORDER LISTENER] Last timestamp:', this.lastOrderTimestamp?.toISOString());
+          console.log('[ORDER LISTENER] Will process?', orderCreatedAt && this.lastOrderTimestamp && orderCreatedAt > this.lastOrderTimestamp);
 
           // Only notify for orders created after monitoring started
           if (orderCreatedAt && this.lastOrderTimestamp && orderCreatedAt > this.lastOrderTimestamp) {
+            console.log('[ORDER LISTENER] ✅ Processing order:', fullOrderId.substring(0, 8));
+            
             const isGroupOrder = orderData.isGroupOrder === true;
             const orderId = change.doc.id.substring(0, 8).toUpperCase();
             const customerName = orderData.userName || orderData.hostUserName || 'Customer';
@@ -288,8 +316,10 @@ class NotificationService {
             const title = isGroupOrder ? '🍗 New Group Order!' : '🍗 New Order Received!';
             const message = `${customerName} • ${itemCount} items • RM ${total.toFixed(2)}`;
 
-            // Add to Firebase notifications
-            await this.addNotification({
+            console.log('[ORDER LISTENER] Adding notification:', title, message);
+            
+            // Add to Firebase notifications (only include groupOrderCode for group orders)
+            const notificationData: any = {
               type: 'order',
               title,
               message,
@@ -297,8 +327,16 @@ class NotificationService {
               orderType: isGroupOrder ? 'group' : 'individual',
               orderTotal: total,
               customerName
-            });
+            };
+            
+            // Only add groupOrderCode for group orders to avoid undefined values
+            if (isGroupOrder) {
+              notificationData.groupOrderCode = orderData.code || orderData.groupOrderCode || null;
+            }
+            
+            await this.addNotification(notificationData);
 
+            console.log('[ORDER LISTENER] Playing notification sound...');
             // Play sound
             this.playNotificationSound();
 
@@ -311,7 +349,9 @@ class NotificationService {
             }
 
             // Auto-print receipts for ALL orders (both group and individual)
+            console.log('[ORDER LISTENER] Calling autoPrintReceipt for order:', change.doc.id.substring(0, 8));
             await this.autoPrintReceipt(change.doc.id, orderData, isGroupOrder);
+            console.log('[ORDER LISTENER] autoPrintReceipt completed for:', change.doc.id.substring(0, 8));
 
             console.log(`New order notification: ${orderId}`);
           }
@@ -334,19 +374,45 @@ class NotificationService {
   // Auto-print receipts for both individual and group orders
   private async autoPrintReceipt(orderId: string, orderData: any, isGroupOrder: boolean) {
     try {
+      console.log(`[AUTO-PRINT] Called for order ${orderId.substring(0, 8)}, isGroupOrder: ${isGroupOrder}`);
+      
+      // Ensure printedOrderIds is initialized
+      if (!this.printedOrderIds) {
+        console.warn('[AUTO-PRINT] printedOrderIds not initialized, creating new Set');
+        this.printedOrderIds = new Set();
+      }
+      
+      // Prevent duplicate prints
+      if (this.printedOrderIds.has(orderId)) {
+        console.log(`[AUTO-PRINT] Order ${orderId.substring(0, 8)} already printed - skipping`);
+        return;
+      }
+      
+      // Mark as printed
+      this.printedOrderIds.add(orderId);
+      console.log(`[AUTO-PRINT] Marked ${orderId.substring(0, 8)} as printed`);
+      
+      // Clean up old IDs after 5 minutes to prevent memory leak
+      setTimeout(() => {
+        this.printedOrderIds.delete(orderId);
+      }, 5 * 60 * 1000);
+      
       // Check if auto-print is enabled in settings
+      console.log(`[AUTO-PRINT] Fetching settings from appSettings/adminPreferences...`);
       const settingsRef = doc(db, 'appSettings', 'adminPreferences');
       const settingsSnap = await getDoc(settingsRef);
-      const autoPrintEnabled = settingsSnap.exists() ? settingsSnap.data().autoPrintReceipts !== false : false;
+      const autoPrintEnabled = settingsSnap.exists() ? settingsSnap.data().autoPrintReceipts !== false : true;
       const printerName = settingsSnap.exists() ? settingsSnap.data().printerName : '';
       const useThermalPrinter = settingsSnap.exists() ? settingsSnap.data().useThermalPrinter !== false : true;
 
+      console.log(`[AUTO-PRINT] Settings - Enabled: ${autoPrintEnabled}, Printer: ${printerName || 'Auto'}, Thermal: ${useThermalPrinter}`);
+
       if (!autoPrintEnabled) {
-        console.log('Auto-print is disabled in settings');
+        console.log('[AUTO-PRINT] Auto-print is disabled in settings - exiting');
         return;
       }
 
-      console.log(`Auto-print enabled for ${isGroupOrder ? 'group' : 'individual'} order. Printer: ${printerName || 'Auto'}, Thermal: ${useThermalPrinter}`);
+      console.log(`[AUTO-PRINT] ✅ Processing ${isGroupOrder ? 'group' : 'individual'} order for printing...`);
 
       // Use QZ Tray thermal printer if enabled
       if (useThermalPrinter) {
@@ -362,17 +428,37 @@ class NotificationService {
             createdAt: orderData.createdAt || Timestamp.now()
           };
 
-          console.log(`Attempting QZ Tray print for order ${orderId.substring(0, 8)}...`);
+          const printCallId = Math.random().toString(36).substring(7).toUpperCase();
+          console.log(`\n╔═══════════════════════════════════════════╗`);
+          console.log(`║   AUTO-PRINT CALL [${printCallId}]`);
+          console.log(`╚═══════════════════════════════════════════╝`);
+          console.log(`[AUTO-PRINT ${printCallId}] Attempting QZ Tray print for order ${orderId.substring(0, 8)}...`);
+          console.log(`[AUTO-PRINT ${printCallId}] Order data:`, {
+            isGroupOrder,
+            itemCount: order.items?.length,
+            hasMembers: !!order.members,
+            memberCount: order.members?.length,
+            items: order.items?.map((item: any) => ({
+              name: item.menuItem?.name || item.name || item.menuItemName,
+              hasCustomization: !!item.customization,
+              hasMenuItem: !!item.menuItem,
+              menuItemName: item.menuItem?.name,
+              customizationKeys: item.customization ? Object.keys(item.customization) : []
+            }))
+          });
+          console.log(`[AUTO-PRINT ${printCallId}] Calling thermalPrinter.printReceipt NOW...`);
           const success = await thermalPrinter.printReceipt(order, {
             printerName: printerName || undefined,
             paperWidth: 80
           });
 
           if (success) {
-            console.log(`✓ Master receipt printed via QZ Tray for order ${orderId.substring(0, 8)}`);
+            console.log(`[AUTO-PRINT ${printCallId}] ✓ Master receipt printed via QZ Tray for order ${orderId.substring(0, 8)}`);
+            console.log(`[AUTO-PRINT ${printCallId}] QZ Tray print successful, returning early - NO FALLBACK`);
             
-            // For group orders, also print individual member receipts
-            if (isGroupOrder && orderData.members && orderData.members.length > 0) {
+            // For group orders with multiple members, also print individual member receipts
+            // Skip if only 1 member (individual orders should not have member receipts)
+            if (isGroupOrder && orderData.members && orderData.members.length > 1) {
               console.log(`[QZ Tray] Printing ${orderData.members.length} individual member receipts...`);
               
               for (let i = 0; i < orderData.members.length; i++) {
@@ -405,6 +491,8 @@ class NotificationService {
               console.log('[QZ Tray] ✓ All receipts printed');
             }
             
+            console.log(`[AUTO-PRINT ${printCallId}] Exiting autoPrintReceipt - print complete`);
+            console.log(`╚═══════════════════════════════════════════╝\n`);
             return;
           } else {
             console.log('✗ QZ Tray print failed, falling back to browser print');
@@ -416,7 +504,9 @@ class NotificationService {
       }
 
       // Fallback to browser print service (only for group orders)
+      console.log('[AUTO-PRINT] Reached fallback section. isGroupOrder:', isGroupOrder);
       if (isGroupOrder) {
+        console.log('[FALLBACK] Calling printService.printGroupOrderReceipts...');
         const groupOrderForPrint: GroupOrderForPrint = {
           id: orderId,
           groupName: orderData.groupName || 'Group Order',
@@ -435,7 +525,8 @@ class NotificationService {
           ),
           orderType: orderData.orderType,
           location: orderData.location || orderData.selectedLocation,
-          paymentMethod: orderData.paymentMethod
+          paymentMethod: orderData.paymentMethod,
+          paymentType: orderData.paymentType
         };
 
         console.log(`Auto-printing 1 MASTER + ${groupOrderForPrint.participants.length} MEMBER receipts for group order ${orderId.substring(0, 8)}`);
@@ -446,7 +537,14 @@ class NotificationService {
       }
       
     } catch (error) {
-      console.error('Error auto-printing receipt:', error);
+      console.error('[AUTO-PRINT ERROR] Failed to auto-print receipt:', error);
+      if (error instanceof Error) {
+        console.error('[AUTO-PRINT ERROR] Error name:', error.name);
+        console.error('[AUTO-PRINT ERROR] Error message:', error.message);
+        console.error('[AUTO-PRINT ERROR] Error stack:', error.stack);
+      }
+      console.error('[AUTO-PRINT ERROR] Order ID:', orderId?.substring(0, 8));
+      console.error('[AUTO-PRINT ERROR] Is Group Order:', isGroupOrder);
     }
   }
 

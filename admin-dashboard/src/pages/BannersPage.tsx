@@ -39,6 +39,8 @@ const BannersPage: React.FC = () => {
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [dirtyBanners, setDirtyBanners] = useState<Set<string>>(new Set());
+  const [savingBanners, setSavingBanners] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -156,9 +158,39 @@ const BannersPage: React.FC = () => {
 
   const handleBannerUpdate = async (bannerId: string, updates: Partial<Banner>) => {
     try {
+      setSavingBanners(prev => new Set(prev).add(bannerId));
       await updateDoc(doc(db, 'homeBanners', bannerId), updates);
       setBanners(banners.map(b => b.id === bannerId ? { ...b, ...updates } : b));
-      alert('Banner updated successfully!');
+      setDirtyBanners(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(bannerId);
+        return newSet;
+      });
+      alert('Banner saved successfully!');
+    } catch (error) {
+      console.error('Error updating banner:', error);
+      alert('Failed to save banner');
+    } finally {
+      setSavingBanners(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(bannerId);
+        return newSet;
+      });
+    }
+  };
+
+  const handleLocalUpdate = (bannerId: string, updates: Partial<Banner>) => {
+    // Update local state immediately
+    setBanners(prev => prev.map(b => b.id === bannerId ? { ...b, ...updates } : b));
+    // Mark as dirty
+    setDirtyBanners(prev => new Set(prev).add(bannerId));
+  };
+
+  const handleToggleUpdate = async (bannerId: string, enabled: boolean) => {
+    try {
+      await updateDoc(doc(db, 'homeBanners', bannerId), { enabled });
+      setBanners(banners.map(b => b.id === bannerId ? { ...b, enabled } : b));
+      alert(`Banner ${enabled ? 'enabled' : 'disabled'} successfully!`);
     } catch (error) {
       console.error('Error updating banner:', error);
       alert('Failed to update banner');
@@ -358,7 +390,7 @@ const BannersPage: React.FC = () => {
                         type="text"
                         className="form-control"
                         value={banner.title}
-                        onChange={(e) => handleBannerUpdate(banner.id, { title: e.target.value })}
+                        onChange={(e) => handleLocalUpdate(banner.id, { title: e.target.value })}
                         placeholder="e.g., SPICY"
                       />
                     </div>
@@ -368,7 +400,7 @@ const BannersPage: React.FC = () => {
                         type="text"
                         className="form-control"
                         value={banner.subtitle}
-                        onChange={(e) => handleBannerUpdate(banner.id, { subtitle: e.target.value })}
+                        onChange={(e) => handleLocalUpdate(banner.id, { subtitle: e.target.value })}
                         placeholder="e.g., WING COMBO"
                       />
                     </div>
@@ -378,7 +410,7 @@ const BannersPage: React.FC = () => {
                         type="text"
                         className="form-control"
                         value={banner.description}
-                        onChange={(e) => handleBannerUpdate(banner.id, { description: e.target.value })}
+                        onChange={(e) => handleLocalUpdate(banner.id, { description: e.target.value })}
                         placeholder="e.g., LIMITED TIME"
                       />
                     </div>
@@ -389,7 +421,7 @@ const BannersPage: React.FC = () => {
                           type="color"
                           className="form-control form-control-color w-100"
                           value={banner.backgroundColor}
-                          onChange={(e) => handleBannerUpdate(banner.id, { backgroundColor: e.target.value })}
+                          onChange={(e) => handleLocalUpdate(banner.id, { backgroundColor: e.target.value })}
                         />
                       </div>
                       <div className="col-md-6 mb-3">
@@ -398,29 +430,56 @@ const BannersPage: React.FC = () => {
                           type="color"
                           className="form-control form-control-color w-100"
                           value={banner.accentColor}
-                          onChange={(e) => handleBannerUpdate(banner.id, { accentColor: e.target.value })}
+                          onChange={(e) => handleLocalUpdate(banner.id, { accentColor: e.target.value })}
                         />
                       </div>
                     </div>
-                    <div className="d-flex justify-content-between align-items-center">
+                    <div className="d-flex justify-content-between align-items-center gap-2">
                       <div className="form-check form-switch">
                         <input
                           className="form-check-input"
                           type="checkbox"
                           checked={banner.enabled}
-                          onChange={(e) => handleBannerUpdate(banner.id, { enabled: e.target.checked })}
+                          onChange={(e) => handleToggleUpdate(banner.id, e.target.checked)}
                         />
                         <label className="form-check-label">
                           {banner.enabled ? 'Enabled' : 'Disabled'}
                         </label>
                       </div>
-                      <button
-                        className="btn btn-sm btn-outline-danger"
-                        onClick={() => handleDeleteBanner(banner.id)}
-                      >
-                        <i className="bi bi-trash me-1"></i>
-                        Delete
-                      </button>
+                      <div className="d-flex gap-2">
+                        {dirtyBanners.has(banner.id) && (
+                          <button
+                            className="btn btn-sm btn-success"
+                            onClick={() => handleBannerUpdate(banner.id, {
+                              title: banner.title,
+                              subtitle: banner.subtitle,
+                              description: banner.description,
+                              backgroundColor: banner.backgroundColor,
+                              accentColor: banner.accentColor
+                            })}
+                            disabled={savingBanners.has(banner.id)}
+                          >
+                            {savingBanners.has(banner.id) ? (
+                              <>
+                                <span className="spinner-border spinner-border-sm me-1"></span>
+                                Saving...
+                              </>
+                            ) : (
+                              <>
+                                <i className="bi bi-check-circle me-1"></i>
+                                Save Changes
+                              </>
+                            )}
+                          </button>
+                        )}
+                        <button
+                          className="btn btn-sm btn-outline-danger"
+                          onClick={() => handleDeleteBanner(banner.id)}
+                        >
+                          <i className="bi bi-trash me-1"></i>
+                          Delete
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

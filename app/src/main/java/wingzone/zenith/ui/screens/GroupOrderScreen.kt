@@ -19,12 +19,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.zIndex
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -33,6 +38,7 @@ import wingzone.zenith.data.models.Cart
 import wingzone.zenith.data.models.GroupOrder
 import wingzone.zenith.data.models.GroupOrderStatus
 import wingzone.zenith.data.repository.FirebaseOrderRepository
+import wingzone.zenith.ui.components.SvgIcon
 import wingzone.zenith.ui.theme.*
 import wingzone.zenith.viewmodel.AuthViewModel
 import wingzone.zenith.viewmodel.GroupOrderViewModel
@@ -193,11 +199,11 @@ fun JoinLobbyTab(
                         .padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Star,
-                        contentDescription = "Feature",
+                    SvgIcon(
+                        assetPath = "icons/groups.svg",
+                        contentDescription = "Group Orders",
                         tint = Color.White,
-                        modifier = Modifier.size(48.dp)
+                        size = 48.dp
                     )
                     
                     Spacer(modifier = Modifier.height(12.dp))
@@ -326,11 +332,11 @@ fun MyLobbiesTab(
                         .padding(vertical = 60.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.ShoppingCart,
+                    SvgIcon(
+                        assetPath = "icons/groups.svg",
                         contentDescription = null,
                         tint = Color.Gray,
-                        modifier = Modifier.size(80.dp)
+                        size = 80.dp
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
@@ -447,24 +453,36 @@ fun LobbyCard(
             
             Spacer(modifier = Modifier.height(16.dp))
             
+            // Stacked Avatars
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                StackedAvatars(
+                    members = order.members,
+                    maxVisible = 3,
+                    avatarSize = 32.dp,
+                    overlapOffset = 10.dp
+                )
+                
+                InfoChip(
+                    icon = Icons.Default.Person,
+                    text = "${order.members.size}/${order.maxMembers}",
+                    color = Color(0xFF4CAF50)
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 InfoChip(
-                    icon = Icons.Default.Person,
-                    text = "${order.members.size}/${order.maxMembers}",
-                    color = WingZoneOrange
-                )
-                InfoChip(
                     icon = Icons.Default.ShoppingCart,
                     text = "${order.totalItems} items",
                     color = WingZoneRed
-                )
-                InfoChip(
-                    icon = Icons.Default.Star,
-                    text = "RM ${String.format("%.2f", order.totalAmount)}",
-                    color = Color(0xFF4CAF50)
                 )
             }
         }
@@ -839,6 +857,98 @@ fun InfoChip(
     }
 }
 
+@Composable
+fun StackedAvatars(
+    members: List<wingzone.zenith.data.models.GroupMember>,
+    maxVisible: Int = 3,
+    avatarSize: androidx.compose.ui.unit.Dp = 32.dp,
+    overlapOffset: androidx.compose.ui.unit.Dp = 10.dp
+) {
+    val context = LocalContext.current
+    val visibleMembers = members.take(maxVisible)
+    val remainingCount = (members.size - maxVisible).coerceAtLeast(0)
+    
+    // Color palette for member avatars
+    val avatarColors = listOf(
+        Color(0xFFFF6B35), // Orange
+        Color(0xFF4ECDC4), // Turquoise
+        Color(0xFFFFBE0B), // Yellow
+        Color(0xFF8338EC), // Purple
+        Color(0xFFFF006E), // Pink
+        Color(0xFF06FFA5), // Mint
+        Color(0xFF1982C4), // Blue
+        Color(0xFFFF5A5F)  // Red
+    )
+    
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.height(avatarSize)
+    ) {
+        visibleMembers.forEachIndexed { index, member ->
+            val avatarColor = avatarColors[index % avatarColors.size]
+            
+            Box(
+                modifier = Modifier
+                    .offset(x = (-overlapOffset * index))
+                    .zIndex((maxVisible - index).toFloat())
+                    .size(avatarSize)
+                    .border(2.dp, Color.White, CircleShape)
+                    .clip(CircleShape)
+                    .background(Color(0xFFE0E0E0))
+            ) {
+                if (!member.profileImageUrl.isNullOrEmpty()) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(member.profileImageUrl)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Profile picture of ${member.name}",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    // Fallback to initial letter with unique color per member
+                    val initial = member.name.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(avatarColor),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = initial,
+                            color = Color.White,
+                            fontSize = (avatarSize.value * 0.45f).sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+        
+        // Show "+X" badge if there are more members
+        if (remainingCount > 0) {
+            Box(
+                modifier = Modifier
+                    .offset(x = (-overlapOffset * maxVisible))
+                    .zIndex(0f)
+                    .size(avatarSize)
+                    .border(2.dp, Color.White, CircleShape)
+                    .clip(CircleShape)
+                    .background(Color(0xFFBDBDBD)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "+$remainingCount",
+                    color = Color.White,
+                    fontSize = (avatarSize.value * 0.35f).sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
 // New lobby card components for the lobbies collection
 @Composable
 fun NewLobbyCard(
@@ -917,28 +1027,51 @@ fun NewLobbyCard(
             
             Spacer(modifier = Modifier.height(12.dp))
             
-            // Members count
+            // Members count and avatars
             val members = lobby["members"] as? List<*>
             val memberCount = members?.size ?: 0
             val maxMembers = (lobby["maxMembers"] as? Long)?.toInt() ?: 10
+            
+            // Convert members map to GroupMember objects for avatar display
+            val groupMembers = members?.mapNotNull { memberData ->
+                (memberData as? Map<*, *>)?.let {
+                    wingzone.zenith.data.models.GroupMember(
+                        userId = it["userId"] as? String ?: "",
+                        name = it["userName"] as? String ?: "Unknown",
+                        profileImageUrl = it["profileImageUrl"] as? String,
+                        isHost = it["isHost"] as? Boolean ?: false,
+                        cartItems = emptyList(),
+                        hasPaid = it["hasPaid"] as? Boolean ?: false
+                    )
+                }
+            } ?: emptyList()
             
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                StackedAvatars(
+                    members = groupMembers,
+                    maxVisible = 3,
+                    avatarSize = 32.dp,
+                    overlapOffset = 10.dp
+                )
+                
                 InfoChip(
                     text = "$memberCount/$maxMembers Members",
                     icon = Icons.Default.Person,
                     color = Color(0xFF4CAF50)
                 )
-                
-                InfoChip(
-                    text = lobby["orderType"] as? String ?: "Pickup",
-                    icon = Icons.Default.ShoppingCart,
-                    color = WingZoneOrange
-                )
             }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            InfoChip(
+                text = lobby["orderType"] as? String ?: "Pickup",
+                icon = Icons.Default.ShoppingCart,
+                color = WingZoneOrange
+            )
         }
     }
 }
@@ -1001,26 +1134,39 @@ fun NewMyLobbyCard(
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            // Members
+            // Members with stacked avatars
             val members = lobby["members"] as? List<Map<String, Any>>
+            val maxMembers = (lobby["maxMembers"] as? Long)?.toInt() ?: 10
+            
             if (members != null && members.isNotEmpty()) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = "Members",
-                        tint = TextSecondary,
-                        modifier = Modifier.size(16.dp)
+                // Convert members map to GroupMember objects for avatar display
+                val groupMembers = members.mapNotNull { memberData ->
+                    wingzone.zenith.data.models.GroupMember(
+                        userId = memberData["userId"] as? String ?: "",
+                        name = memberData["userName"] as? String ?: "Unknown",
+                        profileImageUrl = memberData["profileImageUrl"] as? String,
+                        isHost = memberData["isHost"] as? Boolean ?: false,
+                        cartItems = emptyList(),
+                        hasPaid = memberData["hasPaid"] as? Boolean ?: false
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "${members.size} members",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = DarkGray,
-                            fontWeight = FontWeight.Medium
-                        )
+                }
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    StackedAvatars(
+                        members = groupMembers,
+                        maxVisible = 3,
+                        avatarSize = 32.dp,
+                        overlapOffset = 10.dp
+                    )
+                    
+                    InfoChip(
+                        text = "${members.size}/$maxMembers Members",
+                        icon = Icons.Default.Person,
+                        color = Color(0xFF4CAF50)
                     )
                 }
             }

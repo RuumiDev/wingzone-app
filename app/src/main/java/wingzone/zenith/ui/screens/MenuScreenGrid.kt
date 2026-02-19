@@ -1,5 +1,13 @@
 package wingzone.zenith.ui.screens
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -11,10 +19,13 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -22,9 +33,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.res.painterResource
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.request.CachePolicy
 import wingzone.zenith.data.models.MenuItem
 import wingzone.zenith.ui.components.SimpleItemBottomSheet
+import wingzone.zenith.ui.components.SvgIcon
 import wingzone.zenith.ui.theme.*
 import wingzone.zenith.viewmodel.AuthViewModel
 import wingzone.zenith.viewmodel.CartViewModel
@@ -37,7 +53,7 @@ import kotlinx.coroutines.tasks.await
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MenuScreenGrid(
-    menuViewModel: MenuViewModel = MenuViewModel(),
+    menuViewModel: MenuViewModel,
     cartViewModel: CartViewModel = CartViewModel(),
     authViewModel: AuthViewModel = AuthViewModel(),
     groupOrderViewModel: wingzone.zenith.viewmodel.GroupOrderViewModel = wingzone.zenith.viewmodel.GroupOrderViewModel(),
@@ -58,6 +74,28 @@ fun MenuScreenGrid(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var userHasPaid by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    
+    // Preload all menu images when menu loads
+    LaunchedEffect(menuState) {
+        if (menuState is MenuState.Success) {
+            val categories = (menuState as MenuState.Success).categories
+            categories.forEach { category ->
+                category.items.forEach { item ->
+                    if (!item.imageUrl.isNullOrEmpty()) {
+                        // Trigger image preload into cache
+                        coil.ImageLoader(context).enqueue(
+                            ImageRequest.Builder(context)
+                                .data(item.imageUrl)
+                                .memoryCachePolicy(CachePolicy.ENABLED)
+                                .diskCachePolicy(CachePolicy.ENABLED)
+                                .build()
+                        )
+                    }
+                }
+            }
+        }
+    }
     
     // Check if user has paid in lobby
     LaunchedEffect(currentLobbyId, currentUser?.id) {
@@ -108,10 +146,11 @@ fun MenuScreenGrid(
                             }
                         ) {
                             IconButton(onClick = onNavigateToCart) {
-                                Icon(
-                                    imageVector = Icons.Default.ShoppingCart,
+                                SvgIcon(
+                                    assetPath = "icons/cart.svg",
                                     contentDescription = "Cart",
-                                    tint = WingZoneRed
+                                    tint = WingZoneRed,
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
                         }
@@ -172,15 +211,35 @@ fun MenuScreenGrid(
                     CategorySidebarGrid(
                         categories = state.categories,
                         selectedIndex = selectedCategoryIndex,
+                        listState = listState,
+                        state = state,
                         onCategorySelected = { index ->
                             selectedCategoryIndex = index
                             coroutineScope.launch {
-                                // Calculate item index for this category
-                                var itemIndex = 0
+                                // Calculate item index for this category  
+                                var targetIndex = 0
                                 for (i in 0 until index) {
-                                    itemIndex += 1 + ((state.categories[i].items.size + 1) / 2)
+                                    targetIndex += 1 + ((state.categories[i].items.size + 1) / 2)
                                 }
-                                listState.animateScrollToItem(itemIndex)
+                                // Smooth scroll helper: prevent jarring snaps for far targets
+                                val currentIndex = listState.firstVisibleItemIndex
+                                val distance = kotlin.math.abs(targetIndex - currentIndex)
+                                
+                                if (distance > 4) {
+                                    // Snap to nearby position first
+                                    val intermediateIndex = if (targetIndex > currentIndex) {
+                                        (targetIndex - 3).coerceAtLeast(0)
+                                    } else {
+                                        (targetIndex + 3).coerceAtMost(listState.layoutInfo.totalItemsCount - 1)
+                                    }
+                                    listState.scrollToItem(intermediateIndex)
+                                }
+                                
+                                // Animate the final short distance
+                                listState.animateScrollToItem(
+                                    index = targetIndex,
+                                    scrollOffset = 0
+                                )
                             }
                         }
                     )
@@ -339,14 +398,19 @@ fun MenuItemGridCard(
             ) {
                 if (!item.imageUrl.isNullOrEmpty()) {
                     AsyncImage(
-                        model = item.imageUrl,
+                        model = ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                            .data(item.imageUrl)
+                            .crossfade(200)
+                            .memoryCachePolicy(CachePolicy.ENABLED)
+                            .diskCachePolicy(CachePolicy.ENABLED)
+                            .build(),
                         contentDescription = item.name,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
                 } else {
-                    Icon(
-                        imageVector = Icons.Default.ShoppingCart,
+                    SvgIcon(
+                        assetPath = "icons/cart.svg",
                         contentDescription = item.name,
                         tint = Color.Gray.copy(alpha = 0.3f),
                         modifier = Modifier.size(60.dp)
@@ -432,6 +496,8 @@ fun MenuItemGridCard(
 fun CategorySidebarGrid(
     categories: List<MenuCategory>,
     selectedIndex: Int,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    state: MenuState.Success,
     onCategorySelected: (Int) -> Unit
 ) {
     Surface(
@@ -443,7 +509,8 @@ fun CategorySidebarGrid(
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp)
+            contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp),
+            userScrollEnabled = true
         ) {
             items(categories.size) { index ->
                 CategoryTabItemGrid(
@@ -462,20 +529,36 @@ fun CategoryTabItemGrid(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
+    // Bouncy scale animation for selected state
+    val scale by animateFloatAsState(
+        targetValue = if (isSelected) 1.2f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        )
+    )
+    
+    // Color animation for smooth transitions
+    val iconColor by animateColorAsState(
+        targetValue = if (isSelected) WingZoneRed else Color.Gray,
+        animationSpec = tween(300)
+    )
+    
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(if (isSelected) WingZoneRed.copy(alpha = 0.1f) else Color.Transparent)
             .clickable(onClick = onClick)
+            .background(if (isSelected) WingZoneRed.copy(alpha = 0.1f) else Color.Transparent)
             .padding(vertical = 16.dp, horizontal = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Icon placeholder
-        Icon(
-            imageVector = Icons.Default.ShoppingCart,
+        SvgIcon(
+            assetPath = category.iconPath,
             contentDescription = category.name,
-            tint = if (isSelected) WingZoneRed else Color.Gray,
-            modifier = Modifier.size(32.dp)
+            tint = iconColor,
+            size = 32.dp,
+            modifier = Modifier.scale(scale)
         )
         
         Spacer(modifier = Modifier.height(4.dp))

@@ -1,5 +1,13 @@
 package wingzone.zenith.ui.screens
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -12,19 +20,29 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.IntSize
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.request.CachePolicy
 import wingzone.zenith.data.models.MenuItem
 import wingzone.zenith.ui.components.SimpleItemBottomSheet
+import wingzone.zenith.ui.components.SvgIcon
 import wingzone.zenith.ui.theme.*
 import wingzone.zenith.viewmodel.AuthViewModel
 import wingzone.zenith.viewmodel.CartViewModel
@@ -51,6 +69,28 @@ fun MenuScreen(
     val cart by cartViewModel.cart.collectAsState()
     val isAuthenticated = authViewModel.isAuthenticated()
     var userHasPaid by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    
+    // Preload all menu images when menu loads
+    LaunchedEffect(menuState) {
+        if (menuState is MenuState.Success) {
+            val categories = (menuState as MenuState.Success).categories
+            categories.forEach { category ->
+                category.items.forEach { item ->
+                    if (!item.imageUrl.isNullOrEmpty()) {
+                        // Trigger image preload into cache
+                        coil.ImageLoader(context).enqueue(
+                            ImageRequest.Builder(context)
+                                .data(item.imageUrl)
+                                .memoryCachePolicy(CachePolicy.ENABLED)
+                                .diskCachePolicy(CachePolicy.ENABLED)
+                                .build()
+                        )
+                    }
+                }
+            }
+        }
+    }
     
     Scaffold(
         topBar = {
@@ -146,17 +186,32 @@ fun MenuScreen(
                     CategorySidebar(
                         categories = fallbackCategories,
                         selectedIndex = selectedCategoryIndex,
+                        listState = listState,
                         onCategoryClick = { index ->
                             selectedCategoryIndex = index
                             coroutineScope.launch {
-                                var itemIndex = 0
+                                var targetIndex = 0
                                 for (i in 0 until index) {
-                                    itemIndex += fallbackCategories[i].items.size + 1
+                                    targetIndex += fallbackCategories[i].items.size + 1
                                 }
-                                // Scroll with offset to account for category header
+                                // Smooth scroll helper: prevent jarring snaps for far targets
+                                val currentIndex = listState.firstVisibleItemIndex
+                                val distance = kotlin.math.abs(targetIndex - currentIndex)
+                                
+                                if (distance > 4) {
+                                    // Snap to nearby position first
+                                    val intermediateIndex = if (targetIndex > currentIndex) {
+                                        (targetIndex - 3).coerceAtLeast(0)
+                                    } else {
+                                        (targetIndex + 3).coerceAtMost(listState.layoutInfo.totalItemsCount - 1)
+                                    }
+                                    listState.scrollToItem(intermediateIndex)
+                                }
+                                
+                                // Animate the final short distance
                                 listState.animateScrollToItem(
-                                    index = itemIndex,
-                                    scrollOffset = -20  // Adjust offset to show header properly
+                                    index = targetIndex,
+                                    scrollOffset = 0
                                 )
                             }
                         }
@@ -213,17 +268,32 @@ fun MenuScreen(
                         CategorySidebar(
                             categories = categories,
                             selectedIndex = selectedCategoryIndex,
+                            listState = listState,
                             onCategoryClick = { index ->
                                 selectedCategoryIndex = index
                                 coroutineScope.launch {
-                                    var itemIndex = 0
+                                    var targetIndex = 0
                                     for (i in 0 until index) {
-                                        itemIndex += categories[i].items.size + 1
+                                        targetIndex += categories[i].items.size + 1
                                     }
-                                    // Smooth scroll with offset to account for category header
+                                    // Smooth scroll helper: prevent jarring snaps for far targets
+                                    val currentIndex = listState.firstVisibleItemIndex
+                                    val distance = kotlin.math.abs(targetIndex - currentIndex)
+                                    
+                                    if (distance > 4) {
+                                        // Snap to nearby position first
+                                        val intermediateIndex = if (targetIndex > currentIndex) {
+                                            (targetIndex - 3).coerceAtLeast(0)
+                                        } else {
+                                            (targetIndex + 3).coerceAtMost(listState.layoutInfo.totalItemsCount - 1)
+                                        }
+                                        listState.scrollToItem(intermediateIndex)
+                                    }
+                                    
+                                    // Animate the final short distance
                                     listState.animateScrollToItem(
-                                        index = itemIndex,
-                                        scrollOffset = -20
+                                        index = targetIndex,
+                                        scrollOffset = 0
                                     )
                                 }
                             }
@@ -311,10 +381,11 @@ fun MenuScreen(
                         modifier = Modifier.padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.ShoppingCart,
+                        SvgIcon(
+                            assetPath = "icons/cart.svg",
                             contentDescription = "Cart",
-                            tint = Color.White
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
@@ -333,6 +404,7 @@ fun MenuScreen(
 fun CategorySidebar(
     categories: List<MenuCategory>,
     selectedIndex: Int,
+    listState: LazyListState,
     onCategoryClick: (Int) -> Unit
 ) {
     Surface(
@@ -344,7 +416,8 @@ fun CategorySidebar(
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(vertical = 8.dp)
+            contentPadding = PaddingValues(vertical = 8.dp),
+            userScrollEnabled = true
         ) {
             items(categories.size) { index ->
                 CategoryItem(
@@ -364,6 +437,21 @@ fun CategoryItem(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
+    // Bouncy scale animation for selected state
+    val scale by animateFloatAsState(
+        targetValue = if (isSelected) 1.2f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        )
+    )
+    
+    // Color animation for smooth transitions
+    val iconColor by animateColorAsState(
+        targetValue = if (isSelected) WingZoneRed else Color.Gray,
+        animationSpec = tween(300)
+    )
+    
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -375,11 +463,12 @@ fun CategoryItem(
             .padding(vertical = 12.dp, horizontal = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(
-            imageVector = category.icon,
+        SvgIcon(
+            assetPath = category.iconPath,
             contentDescription = category.name,
-            tint = if (isSelected) WingZoneRed else Color.Gray,
-            modifier = Modifier.size(28.dp)
+            tint = iconColor,
+            size = 28.dp,
+            modifier = Modifier.scale(scale)
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
@@ -418,7 +507,8 @@ fun MenuContent(
         state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        flingBehavior = androidx.compose.foundation.gestures.ScrollableDefaults.flingBehavior()
+        flingBehavior = androidx.compose.foundation.gestures.ScrollableDefaults.flingBehavior(),
+        userScrollEnabled = true
     ) {
         categories.forEach { category ->
             // Category Header
@@ -482,15 +572,20 @@ fun MenuItemCard(
             ) {
                 if (!item.imageUrl.isNullOrEmpty()) {
                     AsyncImage(
-                        model = item.imageUrl,
+                        model = ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                            .data(item.imageUrl)
+                            .crossfade(200)
+                            .memoryCachePolicy(CachePolicy.ENABLED)
+                            .diskCachePolicy(CachePolicy.ENABLED)
+                            .build(),
                         contentDescription = item.name,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
                 } else {
                     // Placeholder icon
-                    Icon(
-                        imageVector = Icons.Default.ShoppingCart,
+                    SvgIcon(
+                        assetPath = "icons/cart.svg",
                         contentDescription = item.name,
                         tint = Color.Gray.copy(alpha = 0.3f),
                         modifier = Modifier.size(40.dp)
@@ -570,7 +665,7 @@ fun getMenuCategories(): List<MenuCategory> {
         MenuCategory(
             id = "combos",
             name = "Combo Meals",
-            icon = Icons.Default.Star,
+            iconPath = "icons/meal.svg",
             items = listOf(
                 MenuItem(
                     name = "Entree 1",
@@ -661,7 +756,7 @@ fun getMenuCategories(): List<MenuCategory> {
         MenuCategory(
             id = "wings",
             name = "Wings",
-            icon = Icons.Default.ShoppingCart,
+            iconPath = "icons/wings.svg",
             items = listOf(
                 MenuItem(
                     name = "Wings - 5 pcs",
@@ -738,7 +833,7 @@ fun getMenuCategories(): List<MenuCategory> {
         MenuCategory(
             id = "tenders",
             name = "Tenders",
-            icon = Icons.Default.ShoppingCart,
+            iconPath = "icons/tenders.svg",
             items = listOf(
                 MenuItem(
                     name = "Tenders - 3 pcs",
@@ -780,7 +875,7 @@ fun getMenuCategories(): List<MenuCategory> {
         MenuCategory(
             id = "burgers",
             name = "Burgers & Sandwiches",
-            icon = Icons.Default.ShoppingCart,
+            iconPath = "icons/burger.svg",
             items = listOf(
                 MenuItem(
                     name = "Double Cheeseburger + Fries",
@@ -829,7 +924,7 @@ fun getMenuCategories(): List<MenuCategory> {
         MenuCategory(
             id = "local",
             name = "Local Favorites",
-            icon = Icons.Default.Star,
+            iconPath = "icons/local-favourite.svg",
             items = listOf(
                 MenuItem(
                     name = "Flavorholic Boneless",
@@ -878,7 +973,7 @@ fun getMenuCategories(): List<MenuCategory> {
         MenuCategory(
             id = "salads",
             name = "Fresh Salads",
-            icon = Icons.Default.ShoppingCart,
+            iconPath = "icons/salad.svg",
             items = listOf(
                 MenuItem(
                     name = "Garden Salad",
@@ -921,7 +1016,7 @@ fun getMenuCategories(): List<MenuCategory> {
         MenuCategory(
             id = "sides",
             name = "On The Side",
-            icon = Icons.Default.Add,
+            iconPath = "icons/sides.svg",
             items = listOf(
                 MenuItem(
                     name = "Wedge Fries - Regular",
@@ -1024,7 +1119,7 @@ fun getMenuCategories(): List<MenuCategory> {
         MenuCategory(
             id = "beverages",
             name = "Beverages",
-            icon = Icons.Default.ShoppingCart,
+            iconPath = "icons/beverage.svg",
             items = listOf(
                 MenuItem(
                     name = "Coca-Cola",

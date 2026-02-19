@@ -2,10 +2,18 @@ package wingzone.zenith.ui.screens
 
 import android.app.Activity
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -21,6 +29,7 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,7 +37,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -37,8 +49,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.request.CachePolicy
 import wingzone.zenith.data.model.HomeBanner
 import wingzone.zenith.data.repository.FirebaseBannerRepository
+import wingzone.zenith.ui.components.SvgIcon
 import wingzone.zenith.ui.theme.*
 import wingzone.zenith.viewmodel.AuthViewModel
 import wingzone.zenith.viewmodel.CartViewModel
@@ -61,12 +76,94 @@ fun HomeScreen(
     onNavigateToJoinLobby: () -> Unit = {},
     onNavigateToGroupOrder: () -> Unit = {},
     onNavigateToLobbyDetail: (String) -> Unit = {},
+    onNavigateToMyReviews: () -> Unit = {},
+    onNavigateToPayment: (String) -> Unit = {}, // Navigate to payment webview
     initialTab: Int = 0
 ) {
-    var selectedTab by remember { mutableStateOf(initialTab) }
+    var selectedTab by remember { mutableIntStateOf(initialTab) }
     var showExitDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val activity = context as? Activity
+    val pagerState = rememberPagerState(pageCount = { 5 })
+    val coroutineScope = rememberCoroutineScope()
+    
+    // Update selected tab when initialTab changes (for navigation back to specific tab)
+    LaunchedEffect(initialTab) {
+        if (selectedTab != initialTab) {
+            selectedTab = initialTab
+        }
+    }
+    
+    // Sync pager with selected tab from bottom navigation
+    LaunchedEffect(selectedTab) {
+        if (pagerState.currentPage != selectedTab) {
+            pagerState.animateScrollToPage(selectedTab)
+        }
+    }
+    
+    // Sync selected tab with pager swipe
+    LaunchedEffect(pagerState.currentPage, pagerState.isScrollInProgress) {
+        if (!pagerState.isScrollInProgress && selectedTab != pagerState.currentPage) {
+            selectedTab = pagerState.currentPage
+        }
+    }
+    
+    // Persistent ViewModels - survive tab switches
+    val menuViewModel = remember { wingzone.zenith.viewmodel.MenuViewModel() }
+    
+    // Persistent scroll state for menu - survives tab switches and recompositions
+    val menuScrollState = rememberLazyListState()
+    
+    // Persistent banner state - loads once and survives tab navigation
+    var banners by remember { mutableStateOf<List<HomeBanner>>(emptyList()) }
+    var areBannersLoaded by remember { mutableStateOf(false) }
+    val bannerRepository = remember { FirebaseBannerRepository() }
+    
+    // Reviews state
+    var reviews by remember { mutableStateOf<List<wingzone.zenith.data.models.Review>>(emptyList()) }
+    var areReviewsLoaded by remember { mutableStateOf(false) }
+    val reviewRepository = remember { wingzone.zenith.data.repository.FirebaseReviewRepository() }
+    
+    // Load banners once on first composition
+    LaunchedEffect(Unit) {
+        if (!areBannersLoaded) {
+            try {
+                android.util.Log.d("HomeScreen", "Fetching banners...")
+                banners = bannerRepository.getActiveBanners()
+                android.util.Log.d("HomeScreen", "Received ${banners.size} banners")
+                areBannersLoaded = true
+                
+                // Preload all banner images into cache for instant display
+                banners.forEach { banner ->
+                    if (banner.imageUrl.isNotEmpty()) {
+                        coil.ImageLoader(context).enqueue(
+                            ImageRequest.Builder(context)
+                                .data(banner.imageUrl)
+                                .memoryCachePolicy(CachePolicy.ENABLED)
+                                .diskCachePolicy(CachePolicy.ENABLED)
+                                .build()
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("HomeScreen", "Error loading banners: ${e.message}", e)
+                areBannersLoaded = true
+            }
+        }
+        
+        // Load reviews
+        if (!areReviewsLoaded) {
+            try {
+                android.util.Log.d("HomeScreen", "Fetching reviews...")
+                reviews = reviewRepository.getRecentReviews(limit = 10)
+                android.util.Log.d("HomeScreen", "Received ${reviews.size} reviews")
+                areReviewsLoaded = true
+            } catch (e: Exception) {
+                android.util.Log.e("HomeScreen", "Error loading reviews: ${e.message}", e)
+                areReviewsLoaded = true
+            }
+        }
+    }
     
     // Handle back button press - show exit confirmation only on home tab
     BackHandler(enabled = selectedTab == 0) {
@@ -106,12 +203,26 @@ fun HomeScreen(
     
     Scaffold(
         topBar = { 
-            if (selectedTab == 0) HomeTopBar(authViewModel = authViewModel) 
+            AnimatedVisibility(
+                visible = pagerState.currentPage == 0,
+                enter = slideInVertically(initialOffsetY = { -it }),
+                exit = slideOutVertically(targetOffsetY = { -it })
+            ) {
+                HomeTopBar(authViewModel = authViewModel)
+            }
         },
-        bottomBar = { BottomNavigationBar(selectedTab) { selectedTab = it } },
+        bottomBar = { AnimatedBottomNavigationBar(
+            pagerState = pagerState,
+            selectedItem = selectedTab
+        ) { selectedTab = it } },
         containerColor = BackgroundGray
     ) { paddingValues ->
-        when (selectedTab) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+            userScrollEnabled = true
+        ) { page ->
+            when (page) {
             0 -> {
                 // Home Tab
                 Column(
@@ -120,13 +231,14 @@ fun HomeScreen(
                         .padding(paddingValues)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    // Balance Cards Section
-                    BalanceCardsSection()
-                    
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     // Promo Carousel
-                    PromoCarousel()
+                    PromoCarousel(
+                        banners = banners,
+                        isLoading = !areBannersLoaded,
+                        onBannerClick = { selectedTab = 1 }
+                    )
                     
                     Spacer(modifier = Modifier.height(16.dp))
                     
@@ -139,8 +251,10 @@ fun HomeScreen(
                     
                     Spacer(modifier = Modifier.height(16.dp))
                     
-                    // Delivery & Pickup Options
-                    DeliveryPickupSection()
+                    // What People Say Section
+                    if (reviews.isNotEmpty()) {
+                        WhatPeopleSaySection(reviews = reviews)
+                    }
                     
                     Spacer(modifier = Modifier.height(16.dp))
                 }
@@ -148,6 +262,7 @@ fun HomeScreen(
             1 -> {
                 // Menu Tab - 2x2 Grid with Seamless Scrolling
                 MenuScreenGrid(
+                    menuViewModel = menuViewModel,
                     cartViewModel = cartViewModel,
                     authViewModel = authViewModel,
                     groupOrderViewModel = groupOrderViewModel,
@@ -166,7 +281,12 @@ fun HomeScreen(
                     lobbyViewModel = lobbyViewModel,
                     currentLobbyId = currentLobbyIdFromViewModel,
                     onAuthRequired = onAuthRequired,
-                    onCheckoutClick = { /* TODO: Navigate to checkout */ }
+                    onCheckoutClick = { 
+                        // Navigate to menu tab when user wants to add more items
+                        selectedTab = 1
+                    },
+                    onNavigateToPayment = onNavigateToPayment,
+                    onNavigateToOrderDetails = onNavigateToOrderDetails
                 )
             }
             3 -> {
@@ -187,8 +307,10 @@ fun HomeScreen(
                     authViewModel = authViewModel,
                     onAuthRequired = onAuthRequired,
                     onNavigateToOrderTracking = onNavigateToOrderTracking,
-                    onNavigateToOrderHistory = onNavigateToOrderHistory
+                    onNavigateToOrderHistory = onNavigateToOrderHistory,
+                    onNavigateToMyReviews = onNavigateToMyReviews
                 )
+            }
             }
         }
     }
@@ -411,21 +533,12 @@ fun BalanceCard(
 }
 
 @Composable
-fun PromoCarousel() {
-    var banners by remember { mutableStateOf<List<HomeBanner>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
-    val bannerRepository = remember { FirebaseBannerRepository() }
+fun PromoCarousel(
+    banners: List<HomeBanner>,
+    isLoading: Boolean,
+    onBannerClick: () -> Unit
+) {
     val coroutineScope = rememberCoroutineScope()
-    
-    // Fetch banners from Firestore
-    LaunchedEffect(Unit) {
-        try {
-            banners = bannerRepository.getActiveBanners()
-            isLoading = false
-        } catch (e: Exception) {
-            isLoading = false
-        }
-    }
     
     val pagerState = rememberPagerState(pageCount = { banners.size.coerceAtLeast(1) })
     
@@ -443,42 +556,57 @@ fun PromoCarousel() {
     Column(
         modifier = Modifier.fillMaxWidth()
     ) {
-        if (isLoading) {
-            // Skeleton Loader
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(160.dp)
-                    .padding(horizontal = 16.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color.LightGray.copy(alpha = 0.3f))
-            )
-        } else if (banners.isEmpty()) {
-            // No banners available
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(160.dp)
-                    .padding(horizontal = 16.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(WingZoneRed.copy(alpha = 0.1f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "No promotions available",
-                    color = TextSecondary,
-                    fontSize = 14.sp
-                )
-            }
-        } else {
-            // Carousel
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            ) { page ->
-                PromoBanner(banner = banners[page])
+        // Carousel container
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+        ) {
+            if (isLoading) {
+                // Clean loading placeholder with subtle gradient
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(
+                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = listOf(
+                                    WingZoneRed.copy(alpha = 0.08f),
+                                    WingZoneOrange.copy(alpha = 0.08f)
+                                )
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(32.dp),
+                        color = WingZoneRed.copy(alpha = 0.5f),
+                        strokeWidth = 3.dp
+                    )
+                }
+            } else if (banners.isEmpty()) {
+                // No banners available
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(WingZoneRed.copy(alpha = 0.08f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No promotions available",
+                        color = TextSecondary,
+                        fontSize = 14.sp
+                    )
+                }
+            } else {
+                // Carousel
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize()
+                ) { page ->
+                    PromoBanner(banner = banners[page], onBannerClick = onBannerClick)
+                }
             }
         }
         
@@ -518,99 +646,31 @@ fun PromoCarousel() {
 }
 
 @Composable
-fun PromoBanner(banner: HomeBanner) {
-    val bgColor = try {
-        Color(android.graphics.Color.parseColor(banner.backgroundColor))
-    } catch (e: Exception) {
-        WingZoneRed
-    }
-    
-    val accentColor = try {
-        Color(android.graphics.Color.parseColor(banner.accentColor))
-    } catch (e: Exception) {
-        WingZoneOrange
-    }
-    
+fun PromoBanner(banner: HomeBanner, onBannerClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(280.dp),
+            .aspectRatio(16f / 9f)  // Maintain 16:9 aspect ratio dynamically
+            .clickable { onBannerClick() },
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = bgColor)
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Box(
             modifier = Modifier.fillMaxSize()
         ) {
-            // Background Image (if available)
+            // Background Image (full opacity, no overlay)
             if (banner.imageUrl.isNotEmpty()) {
                 AsyncImage(
-                    model = banner.imageUrl,
-                    contentDescription = null,
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(banner.imageUrl)
+                        .crossfade(300)
+                        .memoryCachePolicy(CachePolicy.ENABLED)
+                        .diskCachePolicy(CachePolicy.ENABLED)
+                        .build(),
+                    contentDescription = banner.title,
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                    alpha = 0.3f
+                    contentScale = ContentScale.Fit
                 )
-            }
-            
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
-                // Promo content
-                Column {
-                    Text(
-                        text = banner.title,
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = banner.subtitle,
-                        color = accentColor,
-                        fontSize = 36.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                    Text(
-                        text = banner.description,
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                // Center area for product image (placeholder)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ShoppingCart,
-                        contentDescription = "Product",
-                        tint = Color.White.copy(alpha = 0.3f),
-                        modifier = Modifier.size(120.dp)
-                    )
-                }
-                
-                // Bottom button
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color.White.copy(alpha = 0.2f),
-                    onClick = { /* Find out more */ }
-                ) {
-                    Text(
-                        text = "Find Out More",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
-                }
             }
         }
     }
@@ -645,11 +705,11 @@ fun GroupOrderBanner(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Star,
-                    contentDescription = "Special",
+                SvgIcon(
+                    assetPath = "icons/groups.svg",
+                    contentDescription = "Group Order",
                     tint = Color.White,
-                    modifier = Modifier.size(20.dp)
+                    size = 20.dp
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
@@ -835,7 +895,8 @@ fun OrderTypeCard(
 }
 
 @Composable
-fun BottomNavigationBar(
+fun AnimatedBottomNavigationBar(
+    pagerState: androidx.compose.foundation.pager.PagerState,
     selectedItem: Int,
     onItemSelected: (Int) -> Unit
 ) {
@@ -843,42 +904,116 @@ fun BottomNavigationBar(
     val icons = listOf(
         Icons.Default.Home,
         Icons.Default.Menu,
-        Icons.Default.ShoppingCart,
-        Icons.Default.Person,
+        null, // Cart icon will be SVG
+        null, // Group icon will be SVG
         Icons.Default.AccountCircle
     )
     
-    NavigationBar(
-        containerColor = Color.White,
-        tonalElevation = 8.dp
+    // Calculate indicator position with animation
+    val indicatorOffset by animateFloatAsState(
+        targetValue = pagerState.currentPage + pagerState.currentPageOffsetFraction,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "indicator_offset"
+    )
+    
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color.White,
+        shadowElevation = 8.dp
     ) {
-        items.forEachIndexed { index, item ->
-            NavigationBarItem(
-                icon = {
-                    Icon(
-                        imageVector = icons[index],
-                        contentDescription = item,
-                        modifier = Modifier.size(24.dp)
+        BoxWithConstraints {
+            val containerWidth = maxWidth
+            val itemWidth = containerWidth / items.size
+            
+            Column {
+                // Animated indicator
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(itemWidth)
+                            .height(3.dp)
+                            .offset(x = itemWidth * indicatorOffset)
+                            .background(WingZoneRed)
                     )
-                },
-                label = {
-                    Text(
-                        text = item,
-                        fontSize = 11.sp,
-                        fontWeight = if (selectedItem == index) FontWeight.Bold else FontWeight.Normal
+                }
+                
+                // Navigation items
+                Row(
+                    modifier = Modifier
+                    .fillMaxWidth()
+                    .height(80.dp)
+                    .navigationBarsPadding(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                items.forEachIndexed { index, item ->
+                    val isSelected = selectedItem == index
+                    val alpha by animateFloatAsState(
+                        targetValue = if (isSelected) 1f else 0.6f,
+                        label = "alpha_$index"
                     )
-                },
-                selected = selectedItem == index,
-                onClick = { onItemSelected(index) },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = WingZoneRed,
-                    selectedTextColor = WingZoneRed,
-                    unselectedIconColor = Color.Gray,
-                    unselectedTextColor = Color.Gray,
-                    indicatorColor = WingZoneOrange.copy(alpha = 0.2f)
-                )
-            )
+                    val scale by animateFloatAsState(
+                        targetValue = if (isSelected) 1f else 0.85f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessMedium
+                        ),
+                        label = "scale_$index"
+                    )
+                    
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { onItemSelected(index) }
+                            .padding(vertical = 8.dp)
+                            .graphicsLayer {
+                                this.alpha = alpha
+                                scaleX = scale
+                                scaleY = scale
+                            },
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        if (index == 2) { // Cart tab
+                            SvgIcon(
+                                assetPath = "icons/cart.svg",
+                                contentDescription = item,
+                                tint = if (isSelected) WingZoneRed else Color.Gray,
+                                size = 24.dp
+                            )
+                        } else if (index == 3) { // Group tab
+                            SvgIcon(
+                                assetPath = "icons/groups.svg",
+                                contentDescription = item,
+                                tint = if (isSelected) WingZoneRed else Color.Gray,
+                                size = 24.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = icons[index]!!,
+                                contentDescription = item,
+                                tint = if (isSelected) WingZoneRed else Color.Gray,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = item,
+                            fontSize = 11.sp,
+                            color = if (isSelected) WingZoneRed else Color.Gray,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                }
+            }
         }
+    }
     }
 }
 
@@ -939,4 +1074,118 @@ fun ExitConfirmationDialog(
         containerColor = Color.White,
         shape = RoundedCornerShape(24.dp)
     )
+}
+
+/**
+ * What People Say Section - Displays recent customer reviews
+ */
+@Composable
+fun WhatPeopleSaySection(reviews: List<wingzone.zenith.data.models.Review>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+    ) {
+        // Section Title
+        Text(
+            text = "What People Say",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary,
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
+        
+        // Horizontal scrolling list of reviews
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            reviews.forEach { review ->
+                ReviewCard(review = review)
+            }
+        }
+    }
+}
+
+/**
+ * Review Card - Individual review item with premium styling
+ */
+@Composable
+fun ReviewCard(review: wingzone.zenith.data.models.Review) {
+    Card(
+        modifier = Modifier
+            .width(280.dp)
+            .height(160.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8F0)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            width = 1.dp,
+            color = WingZoneOrange.copy(alpha = 0.3f)
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+            // Background watermark quote
+            Text(
+                text = "\u201C",
+                fontSize = 72.sp,
+                fontWeight = FontWeight.Bold,
+                color = WingZoneOrange.copy(alpha = 0.15f),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 8.dp, y = (-8).dp)
+            )
+            
+            // Content column
+            Column(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                // Review text
+                if (review.comment.isNotBlank()) {
+                    Text(
+                        text = review.comment,
+                        fontSize = 15.sp,
+                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                        color = TextPrimary,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        lineHeight = 22.sp
+                    )
+                }
+                
+                // Push footer to bottom
+                Spacer(modifier = Modifier.weight(1f))
+                
+                // Footer: User name (bold)
+                Text(
+                    text = review.userName.ifBlank { "Anonymous" },
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                // Star rating in gold
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    repeat(5) { index ->
+                        Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Rounded.Star,
+                            contentDescription = null,
+                            tint = if (index < review.rating) Color(0xFFFFD700) else Color(0xFFE0E0E0),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
