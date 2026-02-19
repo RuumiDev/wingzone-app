@@ -101,9 +101,7 @@ fun OrderTrackingScreen(
                 title = {
                     Text(
                         "My Orders",
-                        fontWeight = FontWeight.Bold,
-                        color = WingZoneRed,
-                        fontSize = 24.sp
+                        style = MaterialTheme.typography.titleLarge.copy(color = WingZoneRed)
                     )
                 },
                 navigationIcon = {

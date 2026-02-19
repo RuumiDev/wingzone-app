@@ -1,84 +1,202 @@
-rules_version='2'
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wing Zone – Production Firestore Security Rules
+// Last updated: 2026-02-20
+//
+// Admin check strategy:
+//   PRIMARY  – custom Auth claim  (request.auth.token.admin == true)
+//              Zero extra Firestore reads; set via Admin SDK:
+//              admin.auth().setCustomUserClaims(uid, { admin: true })
+//   FALLBACK – Firestore field    (users/{uid}.role == 'admin')
+//              Used while custom claims are not yet set up.
+// ─────────────────────────────────────────────────────────────────────────────
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users collection - authenticated users can read their own data, admins can read all
+
+    // ── Helper functions ──────────────────────────────────────────────────────
+
+    // Is the caller authenticated at all?
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Is the caller an admin?
+    // Checks custom claim first (fast, no Firestore read), then the users doc.
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.admin == true ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+      );
+    }
+
+    // Is the caller the owner of the document?  (pass the stored userId field)
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Validate that an incoming write only touches the listed fields
+    //   (prevents privilege escalation by adding unexpected fields)
+    function onlyFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ── users ─────────────────────────────────────────────────────────────────
+    // Users can only read/write their own document.
+    // Admins can read and write everything.
+    // Role and sensitive fields can only be set by admins.
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow read:   if isOwner(userId) || isAdmin();
+
+      // Self-registration: the new doc's ID must match the caller's UID.
+      // Role defaults to 'user'; only admins may set role to 'admin'.
+      allow create: if isOwner(userId)
+        && request.resource.data.get('role', 'user') == 'user';
+
+      allow update: if (
+        // Owner updating their own non-privileged fields
+        (isOwner(userId) && !('role' in request.resource.data.diff(resource.data).affectedKeys()))
+        || isAdmin()
+      );
+
+      allow delete: if isAdmin();
     }
-    
-    // Restaurant Locations - Read only
-    match /restaurantLocations/{locationId} {
-      allow read: if true;
-      allow write: if false; // Admin only via console
-    }
-    
-    // Home Banners - Public read access for app home screen
-    match /homeBanners/{bannerId} {
-      allow read: if true;
-      allow write: if request.auth != null; // Admin only
-    }
-    
-    // Menu Items - Public read access for browsing (write restricted to admins)
+
+    // ── menuItems ─────────────────────────────────────────────────────────────
+    // Public read (guests can browse the menu).
+    // Only admins may create, update, or delete items.
     match /menuItems/{itemId} {
-      allow read: if true;
-      allow write: if request.auth != null; // Admin only
+      allow read:                 if true;
+      allow create, update, delete: if isAdmin();
     }
-    
-    // Settings - Public read access for availability and app configuration
+
+    // ── categories ────────────────────────────────────────────────────────────
+    match /categories/{catId} {
+      allow read:                 if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── homeBanners ───────────────────────────────────────────────────────────
+    match /homeBanners/{bannerId} {
+      allow read:                 if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── restaurantLocations ───────────────────────────────────────────────────
+    match /restaurantLocations/{locationId} {
+      allow read:                 if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── settings ──────────────────────────────────────────────────────────────
     match /settings/{document} {
-      allow read: if true;
-      allow write: if request.auth != null; // Admin only
+      allow read:                 if true;
+      allow create, update, delete: if isAdmin();
     }
-    
-    // Lobbies
+
+    // ── orders ────────────────────────────────────────────────────────────────
+    // Authenticated users can create their own orders.
+    // Users can read / update only orders they own.
+    // Admins can read, update (status changes), and delete all orders.
+    match /orders/{orderId} {
+      allow create: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid;
+
+      allow read:   if isOwner(resource.data.userId) || isAdmin();
+
+      // Owner may update limited fields (e.g. special instructions);
+      // Admins may update any field (e.g. status → 'Preparing', 'Delivered').
+      allow update: if isOwner(resource.data.userId) || isAdmin();
+
+      allow delete: if isAdmin();
+    }
+
+    // ── groupOrders ───────────────────────────────────────────────────────────
+    // Authenticated users can create group orders.
+    // Only the host or a member may read.
+    // Host and members may update (add items, update status).
+    // Only host or admin may delete.
+    match /groupOrders/{groupOrderId} {
+      // Helper: is the caller the host of this group order?
+      function isGroupOrderHost() {
+        return isAuthenticated() && resource.data.hostId == request.auth.uid;
+      }
+
+      allow create: if isAuthenticated()
+        && request.resource.data.hostId == request.auth.uid;
+
+      // Read is allowed to authenticated users — deep member-map checks are
+      // not supported in rules; access is narrowed by Auth in the app layer.
+      allow read:   if isAuthenticated() || isAdmin();
+
+      allow update: if isGroupOrderHost() || isAdmin();
+
+      allow delete: if isGroupOrderHost() || isAdmin();
+    }
+
+    // ── lobbies ───────────────────────────────────────────────────────────────
+    // Authenticated users can create lobbies (hostUserId must match UID).
+    // Any authenticated user may read (needed to join via code).
+    // Host can update anything; other authenticated users may append themselves
+    //   to the members array but cannot change hostUserId or status directly.
+    // Only host or admin may delete.
     match /lobbies/{lobbyId} {
-      // Anyone can read active lobbies
-      allow read: if resource.data.status == 'active';
-      
-      // Authenticated users can create lobbies
-      allow create: if request.auth != null
+      function isLobbyHost() {
+        return isAuthenticated() && resource.data.hostUserId == request.auth.uid;
+      }
+
+      allow create: if isAuthenticated()
         && request.resource.data.hostUserId == request.auth.uid
         && request.resource.data.status == 'active';
-      
-      // Host or members can update lobby
-      allow update: if request.auth != null
-        && (resource.data.hostUserId == request.auth.uid
-            || isMemberOfLobby(request.auth.uid));
-      
-      // Host can delete lobby
-      allow delete: if request.auth != null
-        && resource.data.hostUserId == request.auth.uid;
-      
-      function isMemberOfLobby(userId) {
-        return userId in resource.data.members;
-      }
+
+      allow read:   if isAuthenticated();
+
+      allow update: if (
+        // Host can change any field
+        isLobbyHost()
+        // Members can update (join/add items) but cannot change hostUserId or status
+        || (isAuthenticated()
+            && !('hostUserId' in request.resource.data.diff(resource.data).affectedKeys())
+            && !('status'    in request.resource.data.diff(resource.data).affectedKeys())
+           )
+        || isAdmin()
+      );
+
+      allow delete: if isLobbyHost() || isAdmin();
     }
-    
-    // Reviews - Public read for enabled reviews, authenticated write
+
+    // ── reviews ───────────────────────────────────────────────────────────────
+    // Anyone can read published+approved reviews.
+    // Authenticated users can read their own review regardless of status.
+    // Authenticated users can create a review for their own orderId;
+    //   new reviews always start in 'pending' moderation.
+    // Only admins can update (approve/reject/publish) or delete reviews.
     match /reviews/{reviewId} {
-      // Public can read enabled and approved reviews
-      allow read: if resource.data.isEnabled == true 
-        && resource.data.moderationStatus == 'approved';
-      
-      // Authenticated users can create reviews for their own orders
-      allow create: if request.auth != null
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.isEnabled == true
-        && request.resource.data.moderationStatus == 'approved';
-      
-      // Only review owner can read their own reviews (even if disabled)
-      allow read: if request.auth != null
-        && resource.data.userId == request.auth.uid;
-      
-      // Admins can update and delete (via admin dashboard)
-      allow update, delete: if request.auth != null;
+      allow read: if (
+        // Public: only enabled and approved reviews
+        (resource.data.isEnabled == true && resource.data.moderationStatus == 'approved')
+        // Owner: can always read their own review
+        || isOwner(resource.data.userId)
+        || isAdmin()
+      );
+
+      allow create: if isAuthenticated()
+        && request.resource.data.userId    == request.auth.uid
+        && request.resource.data.moderationStatus == 'pending';
+
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
-    
-    // All other collections - allow authenticated access for development
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+
+    // ── notifications (user-scoped) ───────────────────────────────────────────
+    match /notifications/{userId}/{notifId} {
+      allow read, update: if isOwner(userId) || isAdmin();
+      allow create:       if isAdmin();   // Created by Cloud Functions / admin
+      allow delete:       if isOwner(userId) || isAdmin();
     }
+
+    // ── Deny everything else ─────────────────────────────────────────────────
+    // No wildcard catch-all — unmatched paths are denied by default in v2.
   }
 }

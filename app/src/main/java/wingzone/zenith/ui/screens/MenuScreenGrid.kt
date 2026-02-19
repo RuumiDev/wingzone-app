@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.res.painterResource
 import coil.compose.AsyncImage
+import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.CachePolicy
 import wingzone.zenith.data.models.MenuItem
@@ -84,9 +85,10 @@ fun MenuScreenGrid(
                 category.items.forEach { item ->
                     if (!item.imageUrl.isNullOrEmpty()) {
                         // Trigger image preload into cache
-                        coil.ImageLoader(context).enqueue(
+                        context.imageLoader.enqueue(
                             ImageRequest.Builder(context)
                                 .data(item.imageUrl)
+                                .memoryCacheKey(item.id)
                                 .memoryCachePolicy(CachePolicy.ENABLED)
                                 .diskCachePolicy(CachePolicy.ENABLED)
                                 .build()
@@ -124,12 +126,10 @@ fun MenuScreenGrid(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
+                title = {
                     Text(
                         "Menu",
-                        fontWeight = FontWeight.Bold,
-                        color = WingZoneRed,
-                        fontSize = 24.sp
+                        style = MaterialTheme.typography.titleLarge.copy(color = WingZoneRed)
                     )
                 },
                 actions = {
@@ -255,7 +255,10 @@ fun MenuScreenGrid(
                     ) {
                         state.categories.forEach { category ->
                             // Category Header
-                            item(key = "header_${category.name}") {
+                            item(
+                                key = "header_${category.name}",
+                                contentType = "category_header"
+                            ) {
                                 Text(
                                     text = category.name,
                                     fontSize = 20.sp,
@@ -269,7 +272,11 @@ fun MenuScreenGrid(
                         val items = category.items
                         val rows = (items.size + 1) / 2
                         
-                        items(rows, key = { rowIndex -> "row_${category.name}_$rowIndex" }) { rowIndex ->
+                        items(
+                            count = rows,
+                            key = { rowIndex -> "row_${category.name}_$rowIndex" },
+                            contentType = { "menu_row" }
+                        ) { rowIndex ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -401,6 +408,8 @@ fun MenuItemGridCard(
                         model = ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
                             .data(item.imageUrl)
                             .crossfade(200)
+                            .placeholder(android.graphics.drawable.ColorDrawable(android.graphics.Color.parseColor("#F5F5F5")))
+                            .memoryCacheKey(item.id)
                             .memoryCachePolicy(CachePolicy.ENABLED)
                             .diskCachePolicy(CachePolicy.ENABLED)
                             .build(),
@@ -512,7 +521,7 @@ fun CategorySidebarGrid(
             contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp),
             userScrollEnabled = true
         ) {
-            items(categories.size) { index ->
+            items(categories.size, key = { categories[it].id }) { index ->
                 CategoryTabItemGrid(
                     category = categories[index],
                     isSelected = index == selectedIndex,

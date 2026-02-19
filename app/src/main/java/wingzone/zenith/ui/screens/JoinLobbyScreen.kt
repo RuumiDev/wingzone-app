@@ -118,7 +118,7 @@ fun JoinLobbyScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Join Group Order") },
+                title = { Text("Join Group Order", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")

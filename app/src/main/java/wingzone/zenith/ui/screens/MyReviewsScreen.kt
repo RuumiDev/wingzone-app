@@ -138,8 +138,7 @@ fun MyReviewsScreen(
                 title = {
                     Text(
                         text = "My Reviews",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp
+                        style = MaterialTheme.typography.titleLarge
                     )
                 },
                 navigationIcon = {

@@ -75,7 +75,7 @@ fun QRScannerScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Scan QR Code") },
+                title = { Text("Scan QR Code", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")

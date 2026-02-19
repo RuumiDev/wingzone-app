@@ -24,7 +24,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ShoppingCart
@@ -52,12 +51,12 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.request.CachePolicy
 import wingzone.zenith.data.model.HomeBanner
-import wingzone.zenith.data.repository.FirebaseBannerRepository
 import wingzone.zenith.ui.components.SvgIcon
 import wingzone.zenith.ui.theme.*
 import wingzone.zenith.viewmodel.AuthViewModel
 import wingzone.zenith.viewmodel.CartViewModel
 import wingzone.zenith.viewmodel.GroupOrderViewModel
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -67,6 +66,7 @@ fun HomeScreen(
     authViewModel: AuthViewModel = AuthViewModel(),
     cartViewModel: CartViewModel = CartViewModel(),
     groupOrderViewModel: GroupOrderViewModel = GroupOrderViewModel(),
+    menuViewModel: wingzone.zenith.viewmodel.MenuViewModel,
     lobbyViewModel: wingzone.zenith.viewmodel.LobbyViewModel,
     onAuthRequired: () -> Unit = {},
     onNavigateToOrderTracking: () -> Unit = {},
@@ -74,10 +74,10 @@ fun HomeScreen(
     onNavigateToOrderDetails: (String) -> Unit = {},
     onNavigateToCreateLobby: () -> Unit = {},
     onNavigateToJoinLobby: () -> Unit = {},
-    onNavigateToGroupOrder: () -> Unit = {},
     onNavigateToLobbyDetail: (String) -> Unit = {},
     onNavigateToMyReviews: () -> Unit = {},
     onNavigateToPayment: (String) -> Unit = {}, // Navigate to payment webview
+    onNavigateToQRScanner: () -> Unit = {},
     initialTab: Int = 0
 ) {
     var selectedTab by remember { mutableIntStateOf(initialTab) }
@@ -85,7 +85,6 @@ fun HomeScreen(
     val context = LocalContext.current
     val activity = context as? Activity
     val pagerState = rememberPagerState(pageCount = { 5 })
-    val coroutineScope = rememberCoroutineScope()
     
     // Update selected tab when initialTab changes (for navigation back to specific tab)
     LaunchedEffect(initialTab) {
@@ -109,61 +108,10 @@ fun HomeScreen(
     }
     
     // Persistent ViewModels - survive tab switches
-    val menuViewModel = remember { wingzone.zenith.viewmodel.MenuViewModel() }
-    
-    // Persistent scroll state for menu - survives tab switches and recompositions
-    val menuScrollState = rememberLazyListState()
-    
-    // Persistent banner state - loads once and survives tab navigation
-    var banners by remember { mutableStateOf<List<HomeBanner>>(emptyList()) }
-    var areBannersLoaded by remember { mutableStateOf(false) }
-    val bannerRepository = remember { FirebaseBannerRepository() }
-    
-    // Reviews state
-    var reviews by remember { mutableStateOf<List<wingzone.zenith.data.models.Review>>(emptyList()) }
-    var areReviewsLoaded by remember { mutableStateOf(false) }
-    val reviewRepository = remember { wingzone.zenith.data.repository.FirebaseReviewRepository() }
-    
-    // Load banners once on first composition
-    LaunchedEffect(Unit) {
-        if (!areBannersLoaded) {
-            try {
-                android.util.Log.d("HomeScreen", "Fetching banners...")
-                banners = bannerRepository.getActiveBanners()
-                android.util.Log.d("HomeScreen", "Received ${banners.size} banners")
-                areBannersLoaded = true
-                
-                // Preload all banner images into cache for instant display
-                banners.forEach { banner ->
-                    if (banner.imageUrl.isNotEmpty()) {
-                        coil.ImageLoader(context).enqueue(
-                            ImageRequest.Builder(context)
-                                .data(banner.imageUrl)
-                                .memoryCachePolicy(CachePolicy.ENABLED)
-                                .diskCachePolicy(CachePolicy.ENABLED)
-                                .build()
-                        )
-                    }
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("HomeScreen", "Error loading banners: ${e.message}", e)
-                areBannersLoaded = true
-            }
-        }
-        
-        // Load reviews
-        if (!areReviewsLoaded) {
-            try {
-                android.util.Log.d("HomeScreen", "Fetching reviews...")
-                reviews = reviewRepository.getRecentReviews(limit = 10)
-                android.util.Log.d("HomeScreen", "Received ${reviews.size} reviews")
-                areReviewsLoaded = true
-            } catch (e: Exception) {
-                android.util.Log.e("HomeScreen", "Error loading reviews: ${e.message}", e)
-                areReviewsLoaded = true
-            }
-        }
-    }
+    // Collect pre-fetched data from the activity-scoped MenuViewModel
+    val banners by menuViewModel.banners.collectAsState()
+    val areBannersLoaded by menuViewModel.areBannersLoaded.collectAsState()
+    val reviews by menuViewModel.reviews.collectAsState()
     
     // Handle back button press - show exit confirmation only on home tab
     BackHandler(enabled = selectedTab == 0) {
@@ -217,11 +165,16 @@ fun HomeScreen(
         ) { selectedTab = it } },
         containerColor = BackgroundGray
     ) { paddingValues ->
+        // SaveableStateHolder: persists scroll positions and all rememberSaveable state
+        // for each tab when the Pager recycles it — Foundation 1.7 equivalent of beyondBoundsPageCount
+        val saveableStateHolder = rememberSaveableStateHolder()
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
-            userScrollEnabled = true
+            userScrollEnabled = true,
+            key = { it }
         ) { page ->
+            saveableStateHolder.SaveableStateProvider(page) {
             when (page) {
             0 -> {
                 // Home Tab
@@ -245,8 +198,7 @@ fun HomeScreen(
                     // Group Order Feature Banner
                     GroupOrderBanner(
                         onNavigateToCreateLobby = onNavigateToCreateLobby,
-                        onNavigateToJoinLobby = onNavigateToJoinLobby,
-                        onOrderNow = { selectedTab = 3 }
+                        onNavigateToJoinLobby = onNavigateToJoinLobby
                     )
                     
                     Spacer(modifier = Modifier.height(16.dp))
@@ -286,7 +238,8 @@ fun HomeScreen(
                         selectedTab = 1
                     },
                     onNavigateToPayment = onNavigateToPayment,
-                    onNavigateToOrderDetails = onNavigateToOrderDetails
+                    onNavigateToOrderDetails = onNavigateToOrderDetails,
+                    onBrowseMenu = { selectedTab = 1 }
                 )
             }
             3 -> {
@@ -298,7 +251,8 @@ fun HomeScreen(
                     onAuthRequired = onAuthRequired,
                     onNavigateToCreateLobby = onNavigateToCreateLobby,
                     onNavigateToJoinLobby = onNavigateToJoinLobby,
-                    onNavigateToLobbyDetail = onNavigateToLobbyDetail
+                    onNavigateToLobbyDetail = onNavigateToLobbyDetail,
+                    onNavigateToQRScanner = onNavigateToQRScanner
                 )
             }
             4 -> {
@@ -312,6 +266,7 @@ fun HomeScreen(
                 )
             }
             }
+            } // SaveableStateProvider
         }
     }
 }
@@ -323,16 +278,9 @@ fun HomeTopBar(
 ) {
     val currentUser by authViewModel.currentUser.collectAsState()
     
-    val greeting = remember {
-        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
-        when (hour) {
-            in 0..11 -> "Good morning"
-            in 12..17 -> "Good afternoon"
-            else -> "Good evening"
-        }
-    }
-    
-    val displayName = currentUser?.name ?: "Wingers"
+    val firstName = currentUser?.name
+        ?.split(" ")?.firstOrNull()?.takeIf { it.isNotBlank() }
+        ?: "Wingers"
     
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -344,70 +292,18 @@ fun HomeTopBar(
                 .fillMaxWidth()
                 .statusBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text(
-                    text = "$greeting, $displayName",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = getAdaptiveTextPrimary(),
-                        fontSize = 16.sp
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Language Selector
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFFF5F5F5),
-                    onClick = { /* Language selection */ }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = "EN",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontWeight = FontWeight.Medium
-                            )
-                        )
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
-                            contentDescription = "Select language",
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-                
-                // Country Flag (Placeholder)
-                Surface(
-                    modifier = Modifier.size(32.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color(0xFFE3F2FD)
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = "Country",
-                            tint = WingZoneRed,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            }
+            Text(
+                text = "Hello, $firstName! \uD83D\uDC4B",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = getAdaptiveTextPrimary(),
+                    fontSize = 22.sp
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -664,6 +560,8 @@ fun PromoBanner(banner: HomeBanner, onBannerClick: () -> Unit) {
                     model = ImageRequest.Builder(LocalContext.current)
                         .data(banner.imageUrl)
                         .crossfade(300)
+                        .placeholder(android.graphics.drawable.ColorDrawable(android.graphics.Color.parseColor("#F0F0F0")))
+                        .memoryCacheKey(banner.id)
                         .memoryCachePolicy(CachePolicy.ENABLED)
                         .diskCachePolicy(CachePolicy.ENABLED)
                         .build(),
@@ -687,8 +585,7 @@ data class PromoData(
 @Composable
 fun GroupOrderBanner(
     onNavigateToCreateLobby: () -> Unit,
-    onNavigateToJoinLobby: () -> Unit,
-    onOrderNow: () -> Unit
+    onNavigateToJoinLobby: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -744,47 +641,20 @@ fun GroupOrderBanner(
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            // Order Now Button
-            Button(
-                onClick = onOrderNow,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = WingZoneOrange
-                ),
-                shape = RoundedCornerShape(12.dp),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp)
-            ) {
-                Text(
-                    text = "Order Now!",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Icon(
-                    imageVector = Icons.Default.ShoppingCart,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)
             ) {
-                OutlinedButton(
+                // Primary: Create
+                Button(
                     onClick = onNavigateToCreateLobby,
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = Color.White
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = WingZoneOrange
                     ),
-                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White.copy(alpha = 0.7f)),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
                 ) {
                     Text(
                         text = "Create",
@@ -793,14 +663,15 @@ fun GroupOrderBanner(
                         )
                     )
                 }
-                
+
+                // Secondary: Join
                 OutlinedButton(
                     onClick = onNavigateToJoinLobby,
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = Color.White
                     ),
-                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White.copy(alpha = 0.7f)),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White),
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Text(

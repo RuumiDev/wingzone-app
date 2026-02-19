@@ -54,12 +54,14 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MenuScreen(
-    menuViewModel: MenuViewModel = MenuViewModel(),
+    menuViewModel: MenuViewModel? = null,
     cartViewModel: CartViewModel = CartViewModel(),
     authViewModel: AuthViewModel = AuthViewModel(),
     onAuthRequired: () -> Unit = {}
 ) {
-    val menuState by menuViewModel.menuState.collectAsState()
+    val context = LocalContext.current
+    val vm = menuViewModel ?: remember { MenuViewModel(context.applicationContext as android.app.Application) }
+    val menuState by vm.menuState.collectAsState()
     var selectedCategoryIndex by remember { mutableStateOf(0) }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
@@ -69,7 +71,6 @@ fun MenuScreen(
     val cart by cartViewModel.cart.collectAsState()
     val isAuthenticated = authViewModel.isAuthenticated()
     var userHasPaid by remember { mutableStateOf(false) }
-    val context = LocalContext.current
     
     // Preload all menu images when menu loads
     LaunchedEffect(menuState) {
@@ -95,17 +96,15 @@ fun MenuScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
+                title = {
                     Text(
                         "Menu",
-                        fontWeight = FontWeight.Bold,
-                        color = WingZoneRed,
-                        fontSize = 24.sp
+                        style = MaterialTheme.typography.titleLarge.copy(color = WingZoneRed)
                     )
                 },
                 actions = {
                     // Refresh button
-                    IconButton(onClick = { menuViewModel.refreshMenu() }) {
+                    IconButton(onClick = { vm.refreshMenu() }) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Refresh menu",
@@ -575,6 +574,7 @@ fun MenuItemCard(
                         model = ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
                             .data(item.imageUrl)
                             .crossfade(200)
+                            .placeholder(android.graphics.drawable.ColorDrawable(android.graphics.Color.parseColor("#F5F5F5")))
                             .memoryCachePolicy(CachePolicy.ENABLED)
                             .diskCachePolicy(CachePolicy.ENABLED)
                             .build(),
