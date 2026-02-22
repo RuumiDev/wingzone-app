@@ -4,6 +4,7 @@ import Widget from '../components/Widget/Widget';
 import { collection, getDocs, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import type { User } from '../types';
+import UniformLoader from '../components/UniformLoader/UniformLoader';
 
 const UsersPage: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -59,11 +60,7 @@ const UsersPage: React.FC = () => {
     return (
       <div>
         <h1 className="mb-4">Users Management</h1>
-        <div className="text-center py-5">
-          <div className="spinner-border text-primary" role="status">
-            <span className="visually-hidden">Loading...</span>
-          </div>
-        </div>
+        <UniformLoader message="Loading users..." />
       </div>
     );
   }

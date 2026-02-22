@@ -3,6 +3,7 @@ import { Row, Col, Table, Button, Badge } from 'reactstrap';
 import Widget from '../components/Widget/Widget';
 import { dashboardService, individualOrdersService } from '../services/firebase';
 import s from './DashboardPage.module.scss';
+import UniformLoader from '../components/UniformLoader/UniformLoader';
 
 interface DashboardStats {
   todayOrders: number;
@@ -72,11 +73,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
     return (
       <div className={s.root}>
         <h1 className="mb-4">Dashboard</h1>
-        <div className="text-center py-5">
-          <div className="spinner-border text-primary" role="status">
-            <span className="visually-hidden">Loading...</span>
-          </div>
-        </div>
+        <UniformLoader message="Loading dashboard..." />
       </div>
     );
   }
@@ -91,8 +88,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
           <Col key={idx} lg={3} md={6} sm={12} className="mb-4">
             <Widget>
               <div className={s.statsCard}>
-                <div className={s.statsIcon}>
-                  <i className={`bi ${stat.icon}`} style={{ color: `var(--bs-${stat.color})` }}></i>
+                <div className={`${s.statsIcon} ${s[stat.color]}`}>
+                  <i className={`bi ${stat.icon}`}></i>
                 </div>
                 <div className={s.statsContent}>
                   <div className={s.statsValue}>{stat.value}</div>

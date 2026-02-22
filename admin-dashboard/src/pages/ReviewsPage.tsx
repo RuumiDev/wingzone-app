@@ -3,6 +3,11 @@ import { Row, Col, Button, Badge, Table, Alert, Card, CardBody, Input, Modal, Mo
 import Widget from '../components/Widget/Widget';
 import { collection, getDocs, doc, updateDoc, query, orderBy, Timestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import Swal from 'sweetalert2';
+import { showToast } from '../utils/toast';
+import { useGSAP } from '@gsap/react';
+import gsap from 'gsap';
+import UniformLoader from '../components/UniformLoader/UniformLoader';
 
 interface Review {
   id: string;
@@ -26,6 +31,8 @@ const ReviewsPage: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState<'all' | 'enabled' | 'disabled'>('all');
   const [selectedReview, setSelectedReview] = useState<Review | null>(null);
   const [detailsModal, setDetailsModal] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10);
 
   useEffect(() => {
     fetchReviews();
@@ -54,44 +61,71 @@ const ReviewsPage: React.FC = () => {
   };
 
   const handleToggleEnable = async (reviewId: string, currentStatus: boolean) => {
-    try {
-      const reviewRef = doc(db, 'reviews', reviewId);
-      await updateDoc(reviewRef, {
-        isEnabled: !currentStatus
-      });
-      
-      setSuccess(`Review ${!currentStatus ? 'enabled' : 'disabled'} successfully!`);
-      setTimeout(() => setSuccess(''), 3000);
-      
-      // Update local state
-      setReviews(reviews.map(r => 
-        r.id === reviewId ? { ...r, isEnabled: !currentStatus } : r
-      ));
-    } catch (err) {
-      console.error('Error updating review:', err);
-      setError('Failed to update review. Please try again.');
-      setTimeout(() => setError(''), 3000);
+    const action = !currentStatus ? 'enable' : 'disable';
+    const result = await Swal.fire({
+      title: `${action === 'enable' ? 'Enable' : 'Disable'} Review?`,
+      text: `Are you sure you want to ${action} this review?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: action === 'enable' ? '#28a745' : '#dc3545',
+      cancelButtonColor: '#6c757d',
+      confirmButtonText: `Yes, ${action}`,
+      cancelButtonText: 'Cancel'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        const reviewRef = doc(db, 'reviews', reviewId);
+        await updateDoc(reviewRef, {
+          isEnabled: !currentStatus
+        });
+        
+        showToast('success', `Review ${action}d successfully!`);
+        
+        // Update local state
+        setReviews(reviews.map(r => 
+          r.id === reviewId ? { ...r, isEnabled: !currentStatus } : r
+        ));
+      } catch (err) {
+        console.error('Error updating review:', err);
+        showToast('error', 'Failed to update review');
+      }
     }
   };
 
   const handleUpdateModerationStatus = async (reviewId: string, status: 'approved' | 'pending' | 'rejected') => {
-    try {
-      const reviewRef = doc(db, 'reviews', reviewId);
-      await updateDoc(reviewRef, {
-        moderationStatus: status
-      });
-      
-      setSuccess(`Review marked as ${status}!`);
-      setTimeout(() => setSuccess(''), 3000);
-      
-      // Update local state
-      setReviews(reviews.map(r => 
-        r.id === reviewId ? { ...r, moderationStatus: status } : r
-      ));
-    } catch (err) {
-      console.error('Error updating moderation status:', err);
-      setError('Failed to update moderation status. Please try again.');
-      setTimeout(() => setError(''), 3000);
+    const titleText = status === 'approved' ? 'Approve Review?' : status === 'rejected' ? 'Reject Review?' : 'Mark as Pending?';
+    const confirmButtonText = status === 'approved' ? 'Yes, Approve' : status === 'rejected' ? 'Yes, Reject' : 'Mark Pending';
+    const confirmButtonColor = status === 'approved' ? '#28a745' : status === 'rejected' ? '#dc3545' : '#ffc107';
+
+    const result = await Swal.fire({
+      title: titleText,
+      text: `Are you sure you want to mark this review as ${status}?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: confirmButtonColor,
+      cancelButtonColor: '#6c757d',
+      confirmButtonText: confirmButtonText,
+      cancelButtonText: 'Cancel'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        const reviewRef = doc(db, 'reviews', reviewId);
+        await updateDoc(reviewRef, {
+          moderationStatus: status
+        });
+        
+        showToast('success', `Review marked as ${status}!`);
+        
+        // Update local state
+        setReviews(reviews.map(r => 
+          r.id === reviewId ? { ...r, moderationStatus: status } : r
+        ));
+      } catch (err) {
+        console.error('Error updating moderation status:', err);
+        showToast('error', 'Failed to update moderation status');
+      }
     }
   };
 
@@ -122,6 +156,42 @@ const ReviewsPage: React.FC = () => {
     
     return true;
   });
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filterStatus]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredReviews.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedReviews = filteredReviews.slice(startIndex, endIndex);
+
+  const handlePreviousPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  // GSAP animation for table rows
+  useGSAP(() => {
+    if (paginatedReviews.length > 0) {
+      gsap.from('.review-row', {
+        opacity: 0,
+        y: 20,
+        duration: 0.3,
+        stagger: 0.05,
+        ease: 'power2.out'
+      });
+    }
+  }, [currentPage, paginatedReviews.length]);
 
   const stats = {
     total: reviews.length,
@@ -243,11 +313,7 @@ const ReviewsPage: React.FC = () => {
         title={<h5>All Reviews ({filteredReviews.length})</h5>}
       >
         {loading ? (
-          <div className="text-center py-4">
-            <div className="spinner-border text-primary" role="status">
-              <span className="sr-only">Loading...</span>
-            </div>
-          </div>
+          <UniformLoader message="Loading reviews..." />
         ) : filteredReviews.length === 0 ? (
           <div className="text-center py-4">
             <p className="text-muted">No reviews found.</p>
@@ -268,8 +334,8 @@ const ReviewsPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredReviews.map((review) => (
-                  <tr key={review.id}>
+                {paginatedReviews.map((review) => (
+                  <tr key={review.id} className="review-row">
                     <td style={{ fontSize: '13px' }}>
                       {review.createdAt?.toDate?.()?.toLocaleDateString('en-US', {
                         month: 'short',
@@ -343,6 +409,36 @@ const ReviewsPage: React.FC = () => {
                 ))}
               </tbody>
             </Table>
+          </div>
+        )}
+        
+        {/* Pagination Controls */}
+        {!loading && filteredReviews.length > 0 && (
+          <div className="d-flex justify-content-between align-items-center mt-3 px-3 pb-3">
+            <div className="text-muted">
+              Showing {startIndex + 1} to {Math.min(endIndex, filteredReviews.length)} of {filteredReviews.length} reviews
+            </div>
+            <div className="d-flex gap-2">
+              <Button
+                color="primary"
+                outline
+                onClick={handlePreviousPage}
+                disabled={currentPage === 1}
+              >
+                <i className="la la-angle-left" /> Previous
+              </Button>
+              <div className="d-flex align-items-center px-3">
+                <span className="fw-bold">Page {currentPage} of {totalPages}</span>
+              </div>
+              <Button
+                color="primary"
+                outline
+                onClick={handleNextPage}
+                disabled={currentPage >= totalPages}
+              >
+                Next <i className="la la-angle-right" />
+              </Button>
+            </div>
           </div>
         )}
       </Widget>

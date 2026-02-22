@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Button, Table, Badge, Modal, ModalHeader, ModalBody, ModalFooter, Form, FormGroup, Label, Input, Alert } from 'reactstrap';
 import Widget from '../components/Widget/Widget';
-import LoadingSpinner from '../components/LoadingSpinner';
+import UniformLoader from '../components/UniformLoader/UniformLoader';
 import { menuService } from '../services/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../lib/firebase';
 import type { MenuItem } from '../types';
 import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
+import Swal from 'sweetalert2';
+import { showToast } from '../utils/toast';
 
 const CATEGORIES = [
   'Combo Meals',
@@ -417,20 +419,29 @@ const MenuPage: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this menu item?')) return;
-    
-    try {
-      await menuService.deleteMenuItem(id);
-      setSuccess('Menu item deleted successfully!');
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to delete menu item');
-      setTimeout(() => setError(''), 3000);
+    const result = await Swal.fire({
+      title: 'Delete Menu Item?',
+      text: 'Are you sure you want to delete this menu item? This action cannot be undone.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc3545',
+      cancelButtonColor: '#6c757d',
+      confirmButtonText: 'Yes, delete it',
+      cancelButtonText: 'Cancel'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await menuService.deleteMenuItem(id);
+        showToast('success', 'Menu item deleted successfully!');
+      } catch (err: any) {
+        showToast('error', err.message || 'Failed to delete menu item');
+      }
     }
   };
 
   if (loading) {
-    return <LoadingSpinner message="Loading menu items..." />;
+    return <UniformLoader message="Loading menu items..." />;
   }
 
   return (

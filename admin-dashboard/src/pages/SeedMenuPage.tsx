@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Button, Alert, Card, CardBody } from 'reactstrap';
 import { seedMenuItems } from '../scripts/seedMenu';
+import Swal from 'sweetalert2';
+import { showToast } from '../utils/toast';
 
 const SeedMenuPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
@@ -8,7 +10,18 @@ const SeedMenuPage: React.FC = () => {
   const [error, setError] = useState('');
 
   const handleSeed = async () => {
-    if (!window.confirm('This will delete all existing menu items and add new ones. Continue?')) {
+    const result = await Swal.fire({
+      title: 'Reset Menu Items?',
+      text: 'This will delete all existing menu items and add new ones. Continue?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc3545',
+      cancelButtonColor: '#6c757d',
+      confirmButtonText: 'Yes, reset menu',
+      cancelButtonText: 'Cancel'
+    });
+
+    if (!result.isConfirmed) {
       return;
     }
 

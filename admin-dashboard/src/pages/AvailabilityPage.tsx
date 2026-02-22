@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button, Card, CardBody, Row, Col, Badge, Alert } from 'reactstrap';
 import { collection, doc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import UniformLoader from '../components/UniformLoader/UniformLoader';
 
 const FLAVORS = [
   'Buffalo Wing',
@@ -234,11 +235,7 @@ const AvailabilityPage: React.FC = () => {
     return (
       <div>
         <h1 className="mb-4">Menu Availability</h1>
-        <div className="text-center py-5">
-          <div className="spinner-border text-primary" role="status">
-            <span className="visually-hidden">Loading...</span>
-          </div>
-        </div>
+        <UniformLoader message="Loading menu items..." />
       </div>
     );
   }

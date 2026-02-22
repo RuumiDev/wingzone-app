@@ -1,9 +1,14 @@
 .widget {
   background: white;
-  border-radius: 8px;
+  border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   margin-bottom: 25px;
-  overflow: visible; // Changed from hidden to visible to prevent dropdown clipping
+  overflow: visible;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  }
 }
 
 .widgetHeader {
@@ -28,5 +33,5 @@
 
 .widgetBody {
   padding: 25px;
-  overflow: visible; // Ensure dropdowns aren't clipped
+  overflow: visible;
 }
