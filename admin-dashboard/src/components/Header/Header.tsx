@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { Button, Modal, ModalHeader, ModalBody, ModalFooter } from 'reactstrap';
+import React from 'react';
+import { Button } from 'reactstrap';
 import NotificationDropdown from '../NotificationDropdown/NotificationDropdown';
 import s from './Header.module.scss';
+import Swal from 'sweetalert2';
+import { showToast } from '../../utils/toast';
 
 interface HeaderProps {
   sidebarToggle: () => void;
@@ -11,22 +13,30 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ sidebarToggle, onLogout, onSettingsClick, onViewOrder }) => {
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const handleLogoutClick = async () => {
+    const result = await Swal.fire({
+      title: 'Confirm Logout',
+      text: 'Are you sure you want to logout?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc3545',
+      cancelButtonColor: '#6c757d',
+      confirmButtonText: '<i class="bi bi-box-arrow-right"></i> Logout',
+      cancelButtonText: 'Cancel',
+      showLoaderOnConfirm: true,
+      preConfirm: async () => {
+        // Simulate logout process
+        await new Promise(resolve => setTimeout(resolve, 800));
+        if (onLogout) {
+          onLogout();
+        }
+      },
+      allowOutsideClick: () => !Swal.isLoading()
+    });
 
-  const handleLogoutClick = () => {
-    setShowLogoutModal(true);
-  };
-
-  const handleConfirmLogout = async () => {
-    setIsLoggingOut(true);
-    // Simulate logout process
-    await new Promise(resolve => setTimeout(resolve, 800));
-    if (onLogout) {
-      onLogout();
+    if (result.isConfirmed) {
+      showToast('success', 'Logged out successfully!');
     }
-    setIsLoggingOut(false);
-    setShowLogoutModal(false);
   };
 
   return (
@@ -57,43 +67,6 @@ const Header: React.FC<HeaderProps> = ({ sidebarToggle, onLogout, onSettingsClic
           </Button>
         </div>
       </header>
-
-      {/* Logout Confirmation Modal */}
-      <Modal isOpen={showLogoutModal} toggle={() => !isLoggingOut && setShowLogoutModal(false)} centered>
-        <ModalHeader toggle={() => !isLoggingOut && setShowLogoutModal(false)}>
-          <i className="bi bi-question-circle-fill me-2 text-warning"></i>
-          Confirm Logout
-        </ModalHeader>
-        <ModalBody>
-          <p className="mb-0">Are you sure you want to logout?</p>
-        </ModalBody>
-        <ModalFooter>
-          <Button 
-            color="secondary" 
-            onClick={() => setShowLogoutModal(false)}
-            disabled={isLoggingOut}
-          >
-            Cancel
-          </Button>
-          <Button 
-            color="danger" 
-            onClick={handleConfirmLogout}
-            disabled={isLoggingOut}
-          >
-            {isLoggingOut ? (
-              <>
-                <span className="spinner-border spinner-border-sm me-2"></span>
-                Logging out...
-              </>
-            ) : (
-              <>
-                <i className="bi bi-box-arrow-right me-2"></i>
-                Logout
-              </>
-            )}
-          </Button>
-        </ModalFooter>
-      </Modal>
     </>
   );
 };

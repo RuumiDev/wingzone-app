@@ -3,6 +3,9 @@ import { collection, getDocs, doc, updateDoc, setDoc } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../lib/firebase';
 import Cropper from 'react-easy-crop';
+import Swal from 'sweetalert2';
+import { showToast } from '../utils/toast';
+import UniformLoader from '../components/UniformLoader/UniformLoader';
 
 interface Point {
   x: number;
@@ -147,10 +150,10 @@ const BannersPage: React.FC = () => {
       setImageSrc(null);
       setSelectedFile(null);
       setEditingBanner(null);
-      alert('Banner image updated successfully!');
+      showToast('success', 'Banner image updated successfully!');
     } catch (error) {
       console.error('Error uploading image:', error);
-      alert('Failed to upload image');
+      showToast('error', 'Failed to upload image');
     } finally {
       setUploading(false);
     }
@@ -166,10 +169,10 @@ const BannersPage: React.FC = () => {
         newSet.delete(bannerId);
         return newSet;
       });
-      alert('Banner saved successfully!');
+      showToast('success', 'Banner saved successfully!');
     } catch (error) {
       console.error('Error updating banner:', error);
-      alert('Failed to save banner');
+      showToast('error', 'Failed to save banner');
     } finally {
       setSavingBanners(prev => {
         const newSet = new Set(prev);
@@ -190,10 +193,10 @@ const BannersPage: React.FC = () => {
     try {
       await updateDoc(doc(db, 'homeBanners', bannerId), { enabled });
       setBanners(banners.map(b => b.id === bannerId ? { ...b, enabled } : b));
-      alert(`Banner ${enabled ? 'enabled' : 'disabled'} successfully!`);
+      showToast('success', `Banner ${enabled ? 'enabled' : 'disabled'} successfully!`);
     } catch (error) {
       console.error('Error updating banner:', error);
-      alert('Failed to update banner');
+      showToast('error', 'Failed to update banner');
     }
   };
 
@@ -212,35 +215,39 @@ const BannersPage: React.FC = () => {
       };
       await setDoc(doc(db, 'homeBanners', newBanner.id), newBanner);
       setBanners([...banners, newBanner]);
-      alert('Banner added successfully!');
+      showToast('success', 'Banner added successfully!');
     } catch (error) {
       console.error('Error adding banner:', error);
-      alert('Failed to add banner');
+      showToast('error', 'Failed to add banner');
     }
   };
 
   const handleDeleteBanner = async (bannerId: string) => {
-    if (!confirm('Are you sure you want to delete this banner?')) {
-      return;
-    }
-    try {
-      await updateDoc(doc(db, 'homeBanners', bannerId), { enabled: false });
-      setBanners(banners.filter(b => b.id !== bannerId));
-      alert('Banner deleted successfully!');
-    } catch (error) {
-      console.error('Error deleting banner:', error);
-      alert('Failed to delete banner');
+    const result = await Swal.fire({
+      title: 'Delete Banner?',
+      text: 'Are you sure you want to delete this banner?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc3545',
+      cancelButtonColor: '#6c757d',
+      confirmButtonText: 'Yes, delete it',
+      cancelButtonText: 'Cancel'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await updateDoc(doc(db, 'homeBanners', bannerId), { enabled: false });
+        setBanners(banners.filter(b => b.id !== bannerId));
+        showToast('success', 'Banner deleted successfully!');
+      } catch (error) {
+        console.error('Error deleting banner:', error);
+        showToast('error', 'Failed to delete banner');
+      }
     }
   };
 
   if (loading) {
-    return (
-      <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '400px' }}>
-        <div className="spinner-border text-danger" role="status">
-          <span className="visually-hidden">Loading...</span>
-        </div>
-      </div>
-    );
+    return <UniformLoader message="Loading banners..." />;
   }
 
   return (

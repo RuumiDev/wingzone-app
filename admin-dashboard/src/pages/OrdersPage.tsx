@@ -9,6 +9,9 @@ import PackagingStickerModal from '../components/PackagingStickerModal/Packaging
 import { aggregateKitchenIngredients } from '../utils/kitchenIngredients';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import Swal from 'sweetalert2';
+import { showToast } from '../utils/toast';
+import s from './OrdersPage.module.scss';
 
 type OrderTab = 'individual' | 'group';
 
@@ -236,37 +239,58 @@ const OrdersPage: React.FC = () => {
   };
 
   const handleDeleteOrder = async (orderId: string, isGroupOrder: boolean = true) => {
-    if (!confirm('⚠️ Development: Delete this order? This cannot be undone!')) return;
-    
-    try {
-      if (isGroupOrder) {
-        await ordersService.deleteOrder(orderId);
-      } else {
-        await individualOrdersService.deleteOrder(orderId);
+    const result = await Swal.fire({
+      title: 'Delete Order?',
+      text: '⚠️ Development: Delete this order? This cannot be undone!',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc3545',
+      cancelButtonColor: '#6c757d',
+      confirmButtonText: 'Yes, delete it',
+      cancelButtonText: 'Cancel'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        if (isGroupOrder) {
+          await ordersService.deleteOrder(orderId);
+        } else {
+          await individualOrdersService.deleteOrder(orderId);
+        }
+        showToast('success', 'Order deleted successfully');
+      } catch (err: any) {
+        showToast('error', err.message || 'Failed to delete order');
       }
-      setSuccess('Order deleted successfully');
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to delete order');
-      setTimeout(() => setError(''), 3000);
     }
   };
 
   const handleDeleteAllOrders = async (isGroupOrder: boolean = true) => {
-    if (!confirm('⚠️ Development: Delete ALL orders? This cannot be undone!')) return;
-    if (!confirm('Are you ABSOLUTELY sure? This will delete ALL orders permanently!')) return;
-    
-    try {
-      if (isGroupOrder) {
-        await ordersService.deleteAllOrders();
-      } else {
-        await individualOrdersService.deleteAllOrders();
+    const result = await Swal.fire({
+      title: 'Delete ALL Orders?',
+      html: '⚠️ <strong>Development:</strong> Delete ALL orders?<br>This cannot be undone!<br><br>Are you ABSOLUTELY sure?',
+      icon: 'error',
+      showCancelButton: true,
+      confirmButtonColor: '#dc3545',
+      cancelButtonColor: '#6c757d',
+      confirmButtonText: 'Yes, DELETE ALL',
+      cancelButtonText: 'Cancel',
+      input: 'checkbox',
+      inputPlaceholder: 'I understand this will delete ALL orders permanently'
+    });
+
+    if (result.isConfirmed && result.value === 1) {
+      try {
+        if (isGroupOrder) {
+          await ordersService.deleteAllOrders();
+        } else {
+          await individualOrdersService.deleteAllOrders();
+        }
+        showToast('success', 'All orders deleted successfully');
+      } catch (err: any) {
+        showToast('error', err.message || 'Failed to delete orders');
       }
-      setSuccess('All orders deleted successfully');
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to delete orders');
-      setTimeout(() => setError(''), 3000);
+    } else if (result.isConfirmed && result.value !== 1) {
+      showToast('error', 'Please confirm by checking the box');
     }
   };
 
@@ -616,7 +640,7 @@ const OrdersPage: React.FC = () => {
                 <i className={`bi bi-chevron-${collapsedSections[dateKey] ? 'down' : 'up'}`}></i>
               </CardHeader>
               <Collapse isOpen={!collapsedSections[dateKey]}>
-                <CardBody className="p-0">
+                <CardBody className={`p-0 ${s.modernTable}`}>
                   <Table responsive hover className="mb-0">
                     <thead>
                       <tr>
@@ -849,6 +873,7 @@ const OrdersPage: React.FC = () => {
                 </Button>
               </div>
               {visibleGroupReceipts[order.id] && (
+              <div className={s.modernTable}>
               <Table responsive bordered size="sm">
                 <thead>
                   <tr>
@@ -1058,6 +1083,7 @@ const OrdersPage: React.FC = () => {
                   })()}
                 </tbody>
               </Table>
+              </div>
               )}
             </Col>
           </Row>

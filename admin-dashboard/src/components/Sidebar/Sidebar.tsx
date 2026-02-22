@@ -1,5 +1,7 @@
 import React from 'react';
 import s from './Sidebar.module.scss';
+import { useGSAP } from '@gsap/react';
+import gsap from 'gsap';
 
 interface SidebarProps {
   activePage?: string;
@@ -19,8 +21,18 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage = 'dashboard', onNavigate 
     { id: 'seed', icon: 'bi-upload', label: 'Import Menu' },
   ];
 
+  // Animate sidebar on mount
+  useGSAP(() => {
+    gsap.from('.admin-sidebar', {
+      x: -100,
+      opacity: 0,
+      duration: 0.4,
+      ease: 'power3.out'
+    });
+  }, []);
+
   return (
-    <nav className={s.root}>
+    <nav className={`${s.root} admin-sidebar`}>
       <header className={s.logo}>
         <img src="/wingzone-logo.png" alt="WingZone" />
         <span className={s.logoText}>WingZone Admin</span>
