@@ -29,7 +29,12 @@ class PaymentRepository {
         customerName: String,
         customerEmail: String,
         totalAmount: Double,
-        customerPhone: String? = null
+        customerPhone: String? = null,
+        cartItems: org.json.JSONArray? = null,
+        userId: String? = null,
+        orderType: String? = null,
+        tableNumber: String? = null,
+        lobbyId: String? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
             val url = URL("$BASE_URL/createToyyibPayBill")
@@ -51,6 +56,15 @@ class PaymentRepository {
                 if (!customerPhone.isNullOrBlank()) {
                     put("customerPhone", customerPhone)
                 }
+                // Cart items for order detail display
+                if (cartItems != null) {
+                    put("cartItems", cartItems)
+                }
+                // Order metadata
+                if (!userId.isNullOrBlank()) put("userId", userId)
+                if (!orderType.isNullOrBlank()) put("orderType", orderType)
+                if (!tableNumber.isNullOrBlank()) put("tableNumber", tableNumber)
+                if (!lobbyId.isNullOrBlank()) put("lobbyId", lobbyId)
             }
             
             // Send request

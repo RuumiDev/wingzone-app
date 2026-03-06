@@ -1,21 +1,58 @@
 # Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# ── Debugging (keep source/line info in stack traces) ────────────────────────
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# ── Kotlin ────────────────────────────────────────────────────────────────────
+-keep class kotlin.** { *; }
+-keep class kotlin.Metadata { *; }
+-keepclassmembers class **$WhenMappings { <fields>; }
+-keepclassmembers class kotlin.Lazy { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# ── Kotlin Coroutines ─────────────────────────────────────────────────────────
+-keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
+-keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
+-keepclassmembers class kotlinx.coroutines.** { volatile <fields>; }
+
+# ── Firebase / Firestore ──────────────────────────────────────────────────────
+-keep class com.google.firebase.** { *; }
+-keep class com.google.android.gms.** { *; }
+-keepattributes *Annotation*
+-keepattributes Signature
+
+# ── Wing Zone – Data Models ───────────────────────────────────────────────────
+# Keep all data classes and enums in the models package so Firestore
+# serialization (hashMapOf) and enum valueOf() lookups keep working.
+-keep class wingzone.zenith.data.models.** { *; }
+-keepclassmembers enum wingzone.zenith.data.models.** {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+    public java.lang.String name();
+    <fields>;
+}
+
+# ── Wing Zone – Repositories ──────────────────────────────────────────────────
+-keep class wingzone.zenith.data.repository.** { *; }
+
+# ── Wing Zone – ViewModels ────────────────────────────────────────────────────
+-keep class wingzone.zenith.viewmodel.** { *; }
+
+# ── Wing Zone – Utils (PendingOrderManager etc.) ──────────────────────────────
+-keep class wingzone.zenith.utils.** { *; }
+
+# ── WebView JS interface ──────────────────────────────────────────────────────
+# (ToyyibPay WebView – keep any @JavascriptInterface methods)
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
+# ── Prevent stripping of Serializable classes ─────────────────────────────────
+-keepclassmembers class * implements java.io.Serializable {
+    static final long serialVersionUID;
+    private static final java.io.ObjectStreamField[] serialPersistentFields;
+    private void writeObject(java.io.ObjectOutputStream);
+    private void readObject(java.io.ObjectInputStream);
+    java.lang.Object writeReplace();
+    java.lang.Object readResolve();
+}

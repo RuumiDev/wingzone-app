@@ -294,6 +294,16 @@ class NotificationService {
           if (orderCreatedAt && this.lastOrderTimestamp && orderCreatedAt > this.lastOrderTimestamp) {
             console.log('[ORDER LISTENER] ✅ Processing order:', fullOrderId.substring(0, 8));
             
+            // Skip notification for online-banking orders that haven't been paid yet.
+            // Cash orders (paymentMethod: 'cash') notify immediately when placed.
+            const paymentStatus = orderData.paymentStatus;
+            const paymentMethod = orderData.paymentMethod;
+            const isOnlinePending = paymentMethod === 'online_banking' && paymentStatus !== 'paid';
+            if (isOnlinePending) {
+              console.log('[ORDER LISTENER] ⏳ Skipping notification - online payment not yet confirmed:', fullOrderId.substring(0, 8));
+              return;
+            }
+            
             const isGroupOrder = orderData.isGroupOrder === true;
             const orderId = change.doc.id.substring(0, 8).toUpperCase();
             const customerName = orderData.userName || orderData.hostUserName || 'Customer';
@@ -354,6 +364,78 @@ class NotificationService {
             console.log('[ORDER LISTENER] autoPrintReceipt completed for:', change.doc.id.substring(0, 8));
 
             console.log(`New order notification: ${orderId}`);
+          }
+        }
+        
+        // Handle payment confirmations (when order is modified)
+        if (change.type === 'modified') {
+          const orderData = change.doc.data();
+          const orderCreatedAt = orderData.createdAt?.toDate();
+          const fullOrderId = change.doc.id;
+          
+          // Only process orders created within last 2 hours (covers slow bank transfers)
+          const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+          if (orderCreatedAt && orderCreatedAt > twoHoursAgo) {
+            // Check if payment is now confirmed
+            const isNowPaid = orderData.paymentStatus === 'paid' && orderData.status === 'confirmed';
+            
+            if (isNowPaid) {
+              console.log('[ORDER LISTENER] 💳 Payment confirmed for order:', fullOrderId.substring(0, 8));
+              
+              const isGroupOrder = orderData.isGroupOrder === true;
+              const orderId = change.doc.id.substring(0, 8).toUpperCase();
+              const customerName = orderData.userName || orderData.customerName || orderData.hostUserName || 'Customer';
+              const total = orderData.total || orderData.totalAmount || orderData.groupTotal || 0;
+              
+              // Calculate item count
+              let itemCount = 0;
+              if (isGroupOrder && orderData.members) {
+                itemCount = orderData.members.reduce((sum: number, member: any) => {
+                  return sum + (member.cartItems?.reduce((cartSum: number, item: any) => {
+                    return cartSum + (item.quantity || 1);
+                  }, 0) || 0);
+                }, 0);
+              } else {
+                itemCount = orderData.items?.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0) || 0;
+              }
+
+              const title = isGroupOrder ? '🍗 New Group Order!' : '🍗 New Order Received!';
+              const message = `${customerName} • ${itemCount} items • RM ${total.toFixed(2)}`;
+
+              console.log('[ORDER LISTENER] Adding notification for confirmed payment:', title, message);
+              
+              // Add to Firebase notifications
+              const notificationData: any = {
+                type: 'order',
+                title,
+                message,
+                orderId: change.doc.id,
+                orderType: isGroupOrder ? 'group' : 'individual',
+                orderTotal: total,
+                customerName
+              };
+              
+              if (isGroupOrder) {
+                notificationData.groupOrderCode = orderData.code || orderData.groupOrderCode || null;
+              }
+              
+              await this.addNotification(notificationData);
+
+              // Play sound
+              this.playNotificationSound();
+
+              // Show browser notification
+              await this.showBrowserNotification(title, message);
+
+              // Show toast notification
+              if (this.toastCallback) {
+                this.toastCallback(title, message, 'order');
+              }
+
+              // Auto-print receipt
+              console.log('[ORDER LISTENER] Calling autoPrintReceipt for confirmed order:', change.doc.id.substring(0, 8));
+              await this.autoPrintReceipt(change.doc.id, orderData, isGroupOrder);
+            }
           }
         }
       });

@@ -147,11 +147,17 @@ object PendingOrderManager {
             val phoneNumber = if (pendingOrder.has("phoneNumber") && !pendingOrder.isNull("phoneNumber"))
                 pendingOrder.getString("phoneNumber") else ""
             
-            // Get cart total
+            // Get cart total and items
             val cartJson = pendingOrder.getString("cart")
             val cart = JSONObject(cartJson)
             val totalAmount = cart.getDouble("total")
-            
+            val cartItems = if (cart.has("items")) cart.getJSONArray("items") else org.json.JSONArray()
+
+            // Extra order metadata to persist with the order
+            val orderType = pendingOrder.optString("orderType", "dine_in")
+            val tableNumber = pendingOrder.optString("location", "")
+            val lobbyId = pendingOrder.optString("lobbyId", "")
+
             // Create ToyyibPay bill
             val paymentRepository = wingzone.zenith.data.repository.PaymentRepository()
             val result = paymentRepository.createToyyibPayBill(
@@ -159,7 +165,12 @@ object PendingOrderManager {
                 customerName = userName,
                 customerEmail = userEmail,
                 totalAmount = totalAmount,
-                customerPhone = phoneNumber.ifEmpty { null }
+                customerPhone = phoneNumber.ifEmpty { null },
+                cartItems = cartItems,
+                userId = userId,
+                orderType = orderType,
+                tableNumber = tableNumber,
+                lobbyId = lobbyId
             )
             
             result.onSuccess { paymentUrl ->
@@ -175,13 +186,64 @@ object PendingOrderManager {
     }
     
     private fun serializeCart(cart: Cart): String {
+        val itemsArray = org.json.JSONArray()
+        for (item in cart.items) {
+            // Build nested menuItem object (required by OrderHistoryScreen parser)
+            val menuItemObj = JSONObject().apply {
+                put("id", item.menuItem.id)
+                put("name", item.menuItem.name)
+                put("description", item.menuItem.description)
+                put("price", item.menuItem.price)
+                put("category", item.menuItem.category)
+                item.menuItem.imageUrl?.let { put("imageUrl", it) }
+                put("requiresCustomization", item.menuItem.requiresCustomization)
+                item.menuItem.customizationOptions?.let { opts ->
+                    put("customizationOptions", JSONObject().apply {
+                        put("requiresFlavor", opts.requiresFlavor)
+                        put("requiresBeverage", opts.requiresBeverage)
+                        put("requiresDippingSauce", opts.requiresDippingSauce)
+                        put("requiresBoneType", opts.requiresBoneType)
+                        put("allowFriesExchange", opts.allowFriesExchange)
+                        put("requiresSaladChoice", opts.requiresSaladChoice)
+                    })
+                }
+            }
+            val itemObj = JSONObject().apply {
+                put("id", item.id)
+                put("menuItem", menuItemObj)
+                put("quantity", item.quantity)
+                put("subtotal", item.subtotal)
+                item.customization?.let { c ->
+                    val customObj = JSONObject().apply {
+                        put("flavor", c.flavor.name)
+                        put("dippingSauce", c.dippingSauce.name)
+                        put("drink", c.drink.name)
+                        c.boneType?.let { put("boneType", it.name) }
+                        c.friesExchange?.let { fe ->
+                            // Serialize as object so JS can access .name, .regularPrice etc.
+                            put("friesExchange", JSONObject().apply {
+                                put("name", fe.name)
+                                put("regularPrice", fe.regularPrice)
+                                fe.jumboPrice?.let { put("jumboPrice", it) }
+                                put("selectedSize", fe.selectedSize)
+                                fe.selectedFlavor?.let { put("selectedFlavor", it) }
+                            })
+                        }
+                        c.saladType?.let { put("saladType", it) }
+                    }
+                    put("customization", customObj)
+                }
+                item.specialInstructions?.let { put("specialInstructions", it) }
+            }
+            itemsArray.put(itemObj)
+        }
         val json = JSONObject().apply {
             put("subtotal", cart.subtotal)
             put("tax", cart.tax)
             put("total", cart.total)
             put("totalItems", cart.totalItems)
             put("taxRate", cart.taxRate)
-            // Note: Cart items will need to be stored separately with full customization details
+            put("items", itemsArray)
         }
         return json.toString()
     }

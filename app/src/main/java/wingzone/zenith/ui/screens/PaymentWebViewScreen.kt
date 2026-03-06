@@ -25,13 +25,36 @@ fun PaymentWebViewScreen(
     onBack: () -> Unit
 ) {
     var isLoading by remember { mutableStateOf(true) }
-    
+    var showCancelDialog by remember { mutableStateOf(false) }
+
+    // Confirmation dialog when user tries to leave mid-payment
+    if (showCancelDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showCancelDialog = false },
+            title = { Text("Cancel Payment?") },
+            text = { Text("Going back will cancel this payment session. You can start a new payment from your cart.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        showCancelDialog = false
+                        onBack()
+                    }
+                ) { Text("Yes, Go Back") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = { showCancelDialog = false }
+                ) { Text("Continue Payment") }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Complete Payment", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { showCancelDialog = true }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
@@ -79,7 +102,8 @@ fun PaymentWebViewScreen(
                                 
                                 // Handle payment callback URLs
                                 when {
-                                    // Success callback
+                                    // Success callback - check for success page or status
+                                    url.contains("payment-success") ||
                                     url.contains("payment/success") || 
                                     url.contains("status_id=1") ||
                                     url.contains("payment_status=success") -> {

@@ -95,6 +95,13 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // ── appSettings ───────────────────────────────────────────────────────────
+    // Admin dashboard uses 'appSettings' collection for preferences
+    match /appSettings/{document} {
+      allow read:                 if true;
+      allow create, update, delete: if isAdmin();
+    }
+
     // ── orders ────────────────────────────────────────────────────────────────
     // Authenticated users can create their own orders.
     // Users can read / update only orders they own.
@@ -189,7 +196,14 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ── notifications (user-scoped) ───────────────────────────────────────────
+    // ── notifications (admin dashboard – flat top-level collection) ─────────
+    // The admin-dashboard NotificationService writes to collection('notifications')
+    // directly (not a subcollection), so we need a flat-collection rule here.
+    match /notifications/{notifId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ── notifications (user-scoped subcollection) ─────────────────────────────
     match /notifications/{userId}/{notifId} {
       allow read, update: if isOwner(userId) || isAdmin();
       allow create:       if isAdmin();   // Created by Cloud Functions / admin

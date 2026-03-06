@@ -404,7 +404,11 @@ export class ThermalPrinterService {
                 commands.push(`  - DIP: ${entree.dippingSauce.toUpperCase()} \n`);
               }
               if (entree.friesExchange) {
-                commands.push(`  - Side: ${entree.friesExchange.name}\n\n`);
+                // friesExchange may be a string (old data) or object (new data)
+                const sideName = typeof entree.friesExchange === 'string'
+                  ? entree.friesExchange
+                  : (entree.friesExchange.name || entree.friesExchange);
+                commands.push(`  - Side: ${sideName}\n\n`);
               }
               // Only show drink if item requires it
               if (entree.drink && item.menuItem?.customizationOptions?.requiresBeverage) {
@@ -445,19 +449,23 @@ export class ThermalPrinterService {
             commands.push(`> Salad: ${item.customization.saladType}\n`);
           }
           if (item.customization.friesExchange) {
-            let side = `> Side: ${item.customization.friesExchange.name}`;
-            if (item.customization.friesExchange.selectedSize === 'jumbo') {
-              side += ' (Jumbo)';
-            }
-            if (item.customization.friesExchange.selectedFlavor) {
-              side += ` - ${item.customization.friesExchange.selectedFlavor}`;
-            }
-            const price = item.customization.friesExchange.selectedSize === 'jumbo' && 
-                         item.customization.friesExchange.jumboPrice !== null 
-              ? item.customization.friesExchange.jumboPrice 
-              : item.customization.friesExchange.regularPrice;
-            if (price > 0) {
-              side += ` (+RM ${price.toFixed(2)})`;
+            // friesExchange may be a string (old data) or object (new data)
+            const feData = item.customization.friesExchange;
+            const feName = typeof feData === 'string' ? feData : (feData.name || feData);
+            let side = `> Side: ${feName}`;
+            if (typeof feData === 'object') {
+              if (feData.selectedSize === 'jumbo') {
+                side += ' (Jumbo)';
+              }
+              if (feData.selectedFlavor) {
+                side += ` - ${feData.selectedFlavor}`;
+              }
+              const price = feData.selectedSize === 'jumbo' && feData.jumboPrice != null
+                ? feData.jumboPrice
+                : feData.regularPrice;
+              if (price > 0) {
+                side += ` (+RM ${price.toFixed(2)})`;
+              }
             }
             commands.push(side + '\n');
           }
