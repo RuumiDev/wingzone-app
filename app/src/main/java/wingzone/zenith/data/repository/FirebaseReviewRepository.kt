@@ -33,18 +33,22 @@ class FirebaseReviewRepository {
                 "menuItemIds" to menuItemIds,
                 "createdAt" to com.google.firebase.Timestamp.now(),
                 "isEnabled" to true,
-                "moderationStatus" to "approved"
+                "moderationStatus" to "pending"
             )
             
             val reviewRef = reviewsCollection.add(reviewData).await()
             
-            // Update order to mark it as rated
-            ordersCollection.document(orderId).update(
-                mapOf(
-                    "ratedAt" to com.google.firebase.Timestamp.now(),
-                    "rating" to rating
-                )
-            ).await()
+            // Update order to mark it as rated (best-effort — don't fail the review if this fails)
+            try {
+                ordersCollection.document(orderId).update(
+                    mapOf(
+                        "ratedAt" to com.google.firebase.Timestamp.now(),
+                        "rating" to rating
+                    )
+                ).await()
+            } catch (updateError: Exception) {
+                android.util.Log.w("ReviewRepository", "Could not update order rating: ${updateError.message}")
+            }
             
             Result.success(reviewRef.id)
         } catch (e: Exception) {

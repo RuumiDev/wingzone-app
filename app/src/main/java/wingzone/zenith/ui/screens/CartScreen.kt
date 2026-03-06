@@ -144,9 +144,7 @@ fun CartScreen(
                 ) {
                     Text(
                         text = "Cart",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                        style = MaterialTheme.typography.titleLarge.copy(color = WingZoneRed)
                     )
                     Spacer(modifier = Modifier.weight(1f))
                     // Show cart items count
@@ -1037,7 +1035,10 @@ fun CartScreen(
                                             val result = withContext(Dispatchers.IO) {
                                                 orderRepository.createOrder(
                                                     userId = currentUser?.id ?: "",
-                                                    userName = currentUser?.name ?: "Guest",
+                                                    userName = currentUser?.name?.takeIf { it.isNotBlank() && it != "User" }
+                                                        ?: com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.displayName?.takeIf { it.isNotBlank() }
+                                                        ?: currentUser?.email?.substringBefore('@')
+                                                        ?: "Customer",
                                                     cart = cart,
                                                     paymentMethod = "cash",
                                                     phoneNumber = currentUser?.phoneNumber,
@@ -1079,11 +1080,19 @@ fun CartScreen(
                                         // Online Banking/FPX: Store pending order and redirect to payment gateway
                                         try {
                                             // Store pending order (payment URL will be created later in MainActivity)
-                                            val pendingOrderId = wingzone.zenith.utils.PendingOrderManager.storePendingOrder(
+                                            // Resolve user name with robust fallback chain
+                                        val firebaseAuthUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+                                        val resolvedName = currentUser?.name?.takeIf { it.isNotBlank() && it != "User" }
+                                            ?: firebaseAuthUser?.displayName?.takeIf { it.isNotBlank() }
+                                            ?: currentUser?.email?.substringBefore('@')?.takeIf { it.isNotBlank() }
+                                            ?: firebaseAuthUser?.email?.substringBefore('@')
+                                            ?: "Customer"
+
+                                        val pendingOrderId = wingzone.zenith.utils.PendingOrderManager.storePendingOrder(
                                                 context = context,
-                                                userId = currentUser?.id ?: "",
-                                                userName = currentUser?.name ?: "Guest",
-                                                userEmail = currentUser?.email,
+                                                userId = currentUser?.id ?: firebaseAuthUser?.uid ?: "",
+                                                userName = resolvedName,
+                                                userEmail = currentUser?.email ?: firebaseAuthUser?.email,
                                                 cart = cart,
                                                 paymentMethod = selectedPaymentMethod,
                                                 paymentType = "online",

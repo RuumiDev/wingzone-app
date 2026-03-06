@@ -12,6 +12,7 @@ import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
 import {onDocumentCreated, onDocumentUpdated} from "firebase-functions/v2/firestore";
 import {onRequest} from "firebase-functions/v2/https";
+import Busboy from "busboy";
 
 // Initialize Firebase Admin
 admin.initializeApp();
@@ -50,9 +51,15 @@ export const autoProgressIndividualOrders = onDocumentCreated(
 
     logger.info(`New order created: ${orderId}, status: ${order.status}, paymentStatus: ${order.paymentStatus}, paymentMethod: ${order.paymentMethod}`);
 
-    // Skip auto-confirm for cash orders awaiting payment confirmation from admin
-    if (order.paymentStatus === "unpaid" || order.paymentMethod === "cash") {
-      logger.info(`Order ${orderId} is a cash/unpaid order — skipping auto-confirm, waiting for admin payment confirmation`);
+    // Skip auto-confirm for cash orders or online orders still awaiting payment
+    // paymentStatus "pending" = online payment bill created but user hasn't paid yet
+    // paymentStatus "unpaid"  = cash order awaiting admin confirmation
+    if (
+      order.paymentStatus === "unpaid" ||
+      order.paymentMethod === "cash" ||
+      order.paymentStatus === "pending"
+    ) {
+      logger.info(`Order ${orderId} is not yet paid (paymentStatus: ${order.paymentStatus}, method: ${order.paymentMethod}) — skipping auto-confirm`);
       return;
     }
 
@@ -460,7 +467,17 @@ export const createToyyibPayBill = onRequest(
     }
 
     try {
-      const {orderId, customerName, customerEmail, totalAmount} = request.body;
+      const {
+        orderId,
+        customerName,
+        customerEmail,
+        totalAmount,
+        cartItems,
+        userId,
+        orderType,
+        tableNumber,
+        lobbyId,
+      } = request.body;
 
       // Validate required fields
       if (!orderId || !customerName || !customerEmail || !totalAmount) {
@@ -499,7 +516,7 @@ export const createToyyibPayBill = onRequest(
         billPriceSetting: "1", // Fixed price
         billPayorInfo: "1", // Require payer info
         billAmount: Math.round(totalAmount * 100).toString(), // Convert to cents (integer)
-        billReturnUrl: "wz://payment/success?order_id=" + orderId,
+        billReturnUrl: `https://wingzone-app.web.app/payment-success?order_id=${orderId}`,
         billCallbackUrl: "https://us-central1-wingzone-app.cloudfunctions.net/paymentCallback",
         billExternalReferenceNo: orderId,
         billTo: customerName,
@@ -516,7 +533,7 @@ export const createToyyibPayBill = onRequest(
       const debugParams = new URLSearchParams(toyyibPayParams);
       debugParams.set("userSecretKey", "[REDACTED]");
       logger.info("ToyyibPay request payload:", debugParams.toString());
-      logger.info("ToyyibPay endpoint: https://dev.toyyibpay.com/index.php/api/createBill");
+      logger.info("ToyyibPay endpoint: https://toyyibpay.com/index.php/api/createBill");
       logger.info("Resolved params — billAmount:", toyyibPayParams.get("billAmount"),
         "billPhone:", toyyibPayParams.get("billPhone"),
         "billEmail:", toyyibPayParams.get("billEmail"),
@@ -525,7 +542,7 @@ export const createToyyibPayBill = onRequest(
 
       // Make request to ToyyibPay API
       const toyyibPayResponse = await fetch(
-        "https://dev.toyyibpay.com/index.php/api/createBill",
+        "https://toyyibpay.com/index.php/api/createBill",
         {
           method: "POST",
           headers: {
@@ -549,7 +566,7 @@ export const createToyyibPayBill = onRequest(
         response.status(500).json({
           error: "Payment gateway returned a non-JSON response",
           rawBody: rawResponseText.slice(0, 500), // truncate for safety
-          httpStatus: toyyibPayResponse.status,
+          httpStatus: toyyibPayResponse.status, 
         });
         return;
       }
@@ -579,9 +596,46 @@ export const createToyyibPayBill = onRequest(
       }
 
       // Construct payment URL
-      const paymentUrl = `https://dev.toyyibpay.com/${billCode}`;
+      const paymentUrl = `https://toyyibpay.com/${billCode}`;
 
       logger.info(`Created ToyyibPay bill for order ${orderId}: ${billCode}`);
+
+      // Create pending order in Firestore
+      try {
+        const subtotal = (request.body.subtotal ?? totalAmount) as number;
+        const totalItems = Array.isArray(cartItems)
+          ? cartItems.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0)
+          : 0;
+        const orderRef = admin.firestore().collection("orders").doc(orderId);
+        await orderRef.set({
+          orderId: orderId,
+          userId: userId ?? null,
+          userName: customerName,
+          customerName: customerName,
+          customerEmail: customerEmail,
+          totalAmount: totalAmount,
+          total: totalAmount,
+          subtotal: subtotal,
+          tax: 0,
+          totalItems: totalItems,
+          paymentMethod: "online_banking",
+          paymentStatus: "pending",
+          status: "pending",
+          isGroupOrder: false,
+          items: Array.isArray(cartItems) ? cartItems : [],
+          ...(orderType ? {orderType} : {}),
+          ...(tableNumber ? {tableNumber} : {}),
+          ...(lobbyId ? {lobbyId} : {}),
+          toyyibPayBillCode: billCode,
+          paymentUrl: paymentUrl,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        logger.info(`Created pending order in Firestore: ${orderId}`);
+      } catch (firestoreError) {
+        logger.error("Failed to create order in Firestore:", firestoreError);
+        // Continue anyway - the order can still be created when payment completes
+      }
 
       // Return bill code and payment URL to the app
       response.status(200).json({
@@ -613,55 +667,81 @@ export const paymentCallback = onRequest(
     }
 
     try {
-      const callbackData = request.body;
-      logger.info("Payment callback received:", callbackData);
+      // Parse multipart/form-data from ToyyibPay
+      const fields: Record<string, string> = {};
+      
+      const busboy = Busboy({headers: request.headers});
+      
+      busboy.on("field", (fieldname: string, value: string) => {
+        logger.info(`Field received: ${fieldname} = ${value}`);
+        fields[fieldname] = value;
+      });
 
-      // ToyyibPay sends: refno, status, reason, billcode, order_id, amount, etc.
-      const {
-        refno,
-        status,
-        reason,
-        billcode,
-        order_id: orderId,
-      } = callbackData;
+      busboy.on("finish", async () => {
+        logger.info("All fields parsed:", fields);
+        
+        // ToyyibPay sends: refno, status, reason, billcode, order_id, etc.
+        const orderId = fields.order_id || 
+                       fields.billExternalReferenceNo ||
+                       fields.external_reference_no;
+        
+        const refno = fields.refno || fields.billpaymentInvoiceNo;
+        const status = fields.status || fields.billpaymentStatus;
+        const reason = fields.reason || fields.billpaymentDescription;
+        const billcode = fields.billcode || fields.billCode;
 
-      if (!orderId) {
-        logger.warn("Payment callback missing order_id");
-        response.status(400).send("Missing order_id");
-        return;
-      }
+        logger.info("Parsed payment data:", {orderId, refno, status, reason, billcode});
 
-      // Status codes from ToyyibPay:
-      // 1 = Successful payment
-      // 2 = Pending payment
-      // 3 = Failed payment
-      if (status === "1" || status === 1) {
-        // Payment successful - update order in Firestore
-        const orderRef = admin.firestore().collection("orders").doc(orderId);
-        const orderDoc = await orderRef.get();
-
-        if (orderDoc.exists) {
-          await orderRef.update({
-            paymentStatus: "paid",
-            status: "confirmed",
-            toyyibPayRefNo: refno,
-            toyyibPayBillCode: billcode,
-            paidAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
-
-          logger.info(`Order ${orderId} marked as paid (ref: ${refno})`);
-        } else {
-          logger.warn(`Order ${orderId} not found in database`);
+        if (!orderId) {
+          logger.warn("Payment callback missing order_id", {fields});
+          response.status(400).send("Missing order_id");
+          return;
         }
-      } else {
-        // Payment failed or pending
-        logger.warn(
-          `Payment status ${status} for order ${orderId}: ${reason}`
-        );
-      }
 
-      // Always return 200 to acknowledge receipt
-      response.status(200).send("OK");
+        // Status codes from ToyyibPay:
+        // 1 = Successful payment
+        // 2 = Pending payment
+        // 3 = Failed payment
+        if (status === "1") {
+          // Payment successful - update order in Firestore
+          const orderRef = admin.firestore().collection("orders").doc(orderId);
+          const orderDoc = await orderRef.get();
+
+          if (orderDoc.exists) {
+            await orderRef.update({
+              paymentStatus: "paid",
+              status: "confirmed",
+              toyyibPayRefNo: refno,
+              toyyibPayBillCode: billcode,
+              paidAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+            logger.info(`Order ${orderId} marked as paid (ref: ${refno})`);
+          } else {
+            logger.warn(`Order ${orderId} not found in database`);
+          }
+        } else {
+          // Payment failed or pending
+          logger.warn(
+            `Payment status ${status} for order ${orderId}: ${reason}`
+          );
+        }
+
+        // Always return 200 to acknowledge receipt
+        response.status(200).send("OK");
+      });
+
+      busboy.on("error", (error: Error) => {
+        logger.error("Busboy error:", error);
+        response.status(200).send("OK"); // Still acknowledge to avoid retries
+      });
+
+      // Pipe the request to busboy
+      if (request.rawBody) {
+        busboy.end(request.rawBody);
+      } else {
+        request.pipe(busboy);
+      }
     } catch (error) {
       logger.error("Error processing payment callback:", error);
       response.status(200).send("OK"); // Still acknowledge to avoid retries

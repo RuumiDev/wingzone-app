@@ -1105,6 +1105,7 @@ fun RatingBottomSheet(
     var selectedRating by remember { mutableIntStateOf(0) }
     var comment by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
+    var submitError by remember { mutableStateOf<String?>(null) }
     val reviewRepository = remember { wingzone.zenith.data.repository.FirebaseReviewRepository() }
     val coroutineScope = rememberCoroutineScope()
     
@@ -1184,18 +1185,38 @@ fun RatingBottomSheet(
             )
             
             Spacer(modifier = Modifier.height(24.dp))
-            
+
+            // Error message
+            if (submitError != null) {
+                Text(
+                    text = submitError!!,
+                    color = Color(0xFFDC2626),
+                    fontSize = 13.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
+                )
+            }
+
             // Submit Button
             Button(
                 onClick = {
                     if (selectedRating > 0 && !isSubmitting) {
                         isSubmitting = true
+                        submitError = null
                         coroutineScope.launch {
                             try {
+                                val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+                                val reviewUserId = firebaseUser?.uid ?: order.userId
+                                val reviewUserName = (firebaseUser?.displayName
+                                    ?.takeIf { it.isNotBlank() && it != "User" }
+                                    ?: order.userName.takeIf { it.isNotBlank() && it != "Guest" }
+                                    ?: firebaseUser?.email?.substringBefore('@')
+                                    ?: "Customer")
                                 val result = reviewRepository.submitReview(
                                     orderId = order.id,
-                                    userId = order.userId,
-                                    userName = order.userName,
+                                    userId = reviewUserId,
+                                    userName = reviewUserName,
                                     rating = selectedRating,
                                     comment = comment,
                                     menuItemIds = order.items.map { it.menuItem.id }
@@ -1204,10 +1225,13 @@ fun RatingBottomSheet(
                                 if (result.isSuccess) {
                                     onSubmit(selectedRating, comment)
                                 } else {
-                                    // Show error
+                                    android.util.Log.e("ReviewSubmit", "Failed: ${result.exceptionOrNull()?.message}")
+                                    submitError = "Could not submit review. Please try again."
                                     isSubmitting = false
                                 }
                             } catch (e: Exception) {
+                                android.util.Log.e("ReviewSubmit", "Exception: ${e.message}", e)
+                                submitError = "Could not submit review. Please try again."
                                 isSubmitting = false
                             }
                         }

@@ -425,85 +425,30 @@ fun AppNavigation() {
         }
     }
     
-    // Listen for payment success callback
+    // Listen for payment success via deep link (browser redirects app after payment)
     LaunchedEffect(Unit) {
         DeepLinkHandler.paymentSuccessFlow.collect { pendingOrderId ->
-            android.util.Log.d("AppNavigation", "Payment succeeded for order: $pendingOrderId")
-            
-            // Process the pending order
+            android.util.Log.d("AppNavigation", "Payment succeeded (deep link) for order: $pendingOrderId")
+
+            // The order was already created in Firestore by createToyyibPayBill Cloud Function
+            // and updated to paid/confirmed by the paymentCallback webhook.
+            // We just need to clean up locally and navigate.
             try {
-                val pendingOrderData = wingzone.zenith.utils.PendingOrderManager.getPendingOrder(context, pendingOrderId)
-                
-                if (pendingOrderData != null) {
-                    // Create the actual order in Firestore
-                    val orderRepository = wingzone.zenith.data.repository.FirebaseOrderRepository()
-                    
-                    val userId = pendingOrderData.getString("userId")
-                    val userName = pendingOrderData.getString("userName")
-                    val paymentMethod = pendingOrderData.getString("paymentMethod")
-                    val phoneNumber: String? = if (pendingOrderData.has("phoneNumber") && !pendingOrderData.isNull("phoneNumber")) 
-                        pendingOrderData.getString("phoneNumber") else null
-                    val orderType: String? = if (pendingOrderData.has("orderType") && !pendingOrderData.isNull("orderType")) 
-                        pendingOrderData.getString("orderType") else null
-                    val location: String? = if (pendingOrderData.has("location") && !pendingOrderData.isNull("location")) 
-                        pendingOrderData.getString("location") else null
-                    
-                    // Note: Cart will need to be reconstructed from current state
-                    // For now, we'll need to access the cart from cartViewModel
-                    val result = orderRepository.createOrder(
-                        userId = userId,
-                        userName = userName,
-                        cart = cartViewModel.cart.value, // Use current cart state
-                        paymentMethod = paymentMethod,
-                        phoneNumber = phoneNumber,
-                        orderType = orderType,
-                        location = location,
-                        lobbyPaymentMethod = null,
-                        paymentType = "online"
-                    )
-                    
-                    result.onSuccess { orderId ->
-                        // Clean up pending order
-                        wingzone.zenith.utils.PendingOrderManager.deletePendingOrder(context, pendingOrderId)
-                        
-                        // Clear cart
-                        cartViewModel.clearCart()
-                        
-                        // Show success message
-                        android.widget.Toast.makeText(
-                            context,
-                            "✓ Payment successful! Order placed.",
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
-                        
-                        // Navigate to order tracking
-                        trackingOrderId = orderId
-                        showOrderTracking = true
-                        currentScreen = Screen.Home
-                    }.onFailure { error ->
-                        android.util.Log.e("AppNavigation", "Failed to create order: ${error.message}")
-                        android.widget.Toast.makeText(
-                            context,
-                            "Payment succeeded, but order creation failed. Please contact support.",
-                            android.widget.Toast.LENGTH_LONG
-                        ).show()
-                    }
-                } else {
-                    android.util.Log.e("AppNavigation", "Pending order not found: $pendingOrderId")
-                    android.widget.Toast.makeText(
-                        context,
-                        "Error: Order data not found",
-                        android.widget.Toast.LENGTH_LONG
-                    ).show()
-                }
+                wingzone.zenith.utils.PendingOrderManager.deletePendingOrder(context, pendingOrderId)
             } catch (e: Exception) {
-                android.util.Log.e("AppNavigation", "Error processing payment success", e)
-                android.widget.Toast.makeText(
-                    context,
-                    "Error processing payment: ${e.message}",
-                    android.widget.Toast.LENGTH_LONG
-                ).show()
+                // Non-critical – log and continue
+                android.util.Log.w("AppNavigation", "Could not delete local pending order", e)
             }
+
+            cartViewModel.clearCart()
+
+            android.widget.Toast.makeText(
+                context,
+                "✓ Payment successful! Your order has been placed.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+
+            currentScreen = Screen.Home
         }
     }
     
@@ -891,9 +836,18 @@ fun AppNavigation() {
                             selectedTab = 2 // Cart tab
                         },
                         onPaymentSuccess = {
-                            // Store the pending order ID for processing
-                            pendingOrderIdForProcessing = pendingOrderId
-                            // DeepLinkHandler will pick this up via the callback flow
+                            // Payment confirmed – the order already exists in Firestore
+                            // (created by createToyyibPayBill Cloud Function and updated
+                            // to paid/confirmed by the paymentCallback webhook).
+                            // Just clean up locally, clear the cart and navigate home.
+                            wingzone.zenith.utils.PendingOrderManager.deletePendingOrder(context, pendingOrderId)
+                            cartViewModel.clearCart()
+                            android.widget.Toast.makeText(
+                                context,
+                                "✓ Payment successful! Your order has been placed.",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                            currentScreen = Screen.Home
                         },
                         onPaymentFailed = {
                             // Show error and return to cart

@@ -4,6 +4,7 @@ import Widget from '../components/Widget/Widget';
 import UniformLoader from '../components/UniformLoader/UniformLoader';
 import { menuService } from '../services/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { getAuth } from 'firebase/auth';
 import { storage } from '../lib/firebase';
 import type { MenuItem } from '../types';
 import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
@@ -386,6 +387,12 @@ const MenuPage: React.FC = () => {
     setError('');
 
     try {
+      // Force-refresh the auth token so the admin custom claim is included
+      const auth = getAuth();
+      if (auth.currentUser) {
+        await auth.currentUser.getIdToken(true);
+      }
+
       // Upload to Firebase Storage
       const timestamp = Date.now();
       const fileName = `${timestamp}-${imageFile.name}`;
@@ -469,30 +476,69 @@ const MenuPage: React.FC = () => {
       )}
 
       {/* Category Filter */}
-      <div className="mb-3">
-        <Button
-          color={selectedCategory === 'All' ? 'primary' : 'outline-primary'}
-          size="sm"
-          className="me-2"
-          onClick={() => setSelectedCategory('All')}
-        >
-          All ({menuItems.length})
-        </Button>
-        {CATEGORIES.map(category => {
-          const count = menuItems.filter(item => item.category === category).length;
-          return (
-            <Button
-              key={category}
-              color={selectedCategory === category ? 'primary' : 'outline-primary'}
-              size="sm"
-              className="me-2 mb-2"
-              onClick={() => setSelectedCategory(category)}
-            >
-              {category} ({count})
-            </Button>
-          );
-        })}
-      </div>
+      {(() => {
+        const categoryMeta: Record<string, { icon: string; color: string }> = {
+          'All':                 { icon: '🍽️',  color: '#6366F1' },
+          'Combo Meals':         { icon: '🥗',  color: '#F97316' },
+          'Wings':               { icon: '🍗',  color: '#EF4444' },
+          'Tenders':             { icon: '🍖',  color: '#F59E0B' },
+          'Burgers & Sandwiches':{ icon: '🍔',  color: '#10B981' },
+          'Local Favorites':     { icon: '⭐',  color: '#8B5CF6' },
+          'Salads':              { icon: '🥙',  color: '#14B8A6' },
+          'Sides':               { icon: '🍟',  color: '#F97316' },
+          'Beverages':           { icon: '🥤',  color: '#0EA5E9' },
+        };
+        const allCategories = ['All', ...CATEGORIES];
+        return (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
+            {allCategories.map(cat => {
+              const count = cat === 'All' ? menuItems.length : menuItems.filter(i => i.category === cat).length;
+              const meta = categoryMeta[cat] ?? { icon: '📦', color: '#6B7280' };
+              const isActive = selectedCategory === cat;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 14px',
+                    borderRadius: 999,
+                    border: `1.5px solid ${isActive ? meta.color : '#E5E7EB'}`,
+                    background: isActive ? meta.color : '#FFFFFF',
+                    color: isActive ? '#FFFFFF' : '#374151',
+                    fontWeight: isActive ? 700 : 500,
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    boxShadow: isActive ? `0 2px 8px ${meta.color}55` : '0 1px 3px rgba(0,0,0,0.06)',
+                    transition: 'all 0.15s ease',
+                    userSelect: 'none',
+                    whiteSpace: 'nowrap',
+                  }}
+                  onMouseEnter={e => { if (!isActive) { e.currentTarget.style.borderColor = meta.color; e.currentTarget.style.color = meta.color; } }}
+                  onMouseLeave={e => { if (!isActive) { e.currentTarget.style.borderColor = '#E5E7EB'; e.currentTarget.style.color = '#374151'; } }}
+                >
+                  <span style={{ fontSize: 15, lineHeight: 1 }}>{meta.icon}</span>
+                  {cat}
+                  <span style={{
+                    background: isActive ? 'rgba(255,255,255,0.25)' : '#F3F4F6',
+                    color: isActive ? '#FFFFFF' : '#6B7280',
+                    borderRadius: 999,
+                    padding: '1px 7px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    minWidth: 22,
+                    textAlign: 'center',
+                  }}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       <Widget>
         {CATEGORIES.map(category => {

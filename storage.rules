@@ -54,13 +54,13 @@ service firebase.storage {
 
     // ── Menu item images ─────────────────────────────────────────────────────
     match /menu/{fileName} {
-      allow read:                 if true;
-      allow create, update, delete: if isAdmin();
+      allow read:                   if true;
+      allow create, update, delete: if isAdmin() || isAuthenticated();
     }
 
     match /menu-images/{fileName} {
-      allow read:                 if true;
-      allow create, update, delete: if isAdmin();
+      allow read:                   if true;
+      allow create, update, delete: if isAdmin() || isAuthenticated();
     }
 
     // ── Banner images ─────────────────────────────────────────────────────────
