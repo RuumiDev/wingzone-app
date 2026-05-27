@@ -13,3 +13,32 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# ── Sensitive / secret files ──────────────────────────────────────────────────
+# Firebase Admin SDK service account key (full admin access — never commit)
+serviceAccountKey.json
+*serviceAccountKey*.json
+
+# QZ Tray signing certificate and private key
+admin-dashboard/public/certs/private-key.pem
+admin-dashboard/public/certs/digital-certificate.txt
+
+# Android signing keystore
+*.jks
+*.keystore
+
+# Environment / secret variable files
+.env
+.env.local
+.env.production
+.env*.local
+functions/.env
+functions/.env.*
+
+# Firebase emulator state
+.firebase/
+firebase-debug.log
+ui-debug.log
+
+# OS artefacts
+Thumbs.db
